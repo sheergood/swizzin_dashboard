@@ -63,6 +63,7 @@ if app.config['RATELIMIT_ENABLED'] == True:
 
 from core.util import *
 import core.hardware as hw
+import core.place as place
 
 #Prepare the background threads
 thread = None
@@ -231,6 +232,13 @@ def api_storage(user):
     if not _is_admin(user):
         return flask.jsonify({"error": "forbidden"}), 403
     return flask.jsonify({"mounts": hw.mounts_usage(get_mounts()), "drives": hw.drives()})
+
+@app.route('/api/place')
+@htpasswd.required
+def api_place(user):
+    if not _is_admin(user):
+        return flask.jsonify({"error": "forbidden"}), 403
+    return flask.jsonify(place.place(app.config, hw._default_iface()))
 
 @app.route('/api/traffic')
 @htpasswd.required

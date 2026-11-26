@@ -6,6 +6,16 @@ seedbox servers. Format follows [Keep a Changelog](https://keepachangelog.com/en
 ## [Unreleased] — `custom` branch
 
 ### Added
+- **Server time, IP and weather strip** above the hero tiles (`GET /api/place`, admin-only):
+  - Live clock in the server's timezone (IANA name + UTC offset), with your local time and how
+    far ahead/behind the server is.
+  - Public IP with copy button, interface IPv4/IPv6, provider + ASN and location with flag.
+  - Current weather at the server's location: conditions icon, temperature, feels-like, high/low,
+    humidity, wind, chance of rain, sunrise–sunset.
+  - Lookups are made by the server and cached (IP location 1 h via ipwho.is → ipinfo.io fallback;
+    weather 15 min via Open-Meteo), no API keys. Configure in `swizzin.cfg`:
+    `WEATHER_LAT`, `WEATHER_LON`, `WEATHER_PLACE` (fixed location), `WEATHER_UNITS = "imperial"`,
+    or `PLACE_LOOKUPS = False` to never contact those services.
 - **Data transferred card** — upload (▲) and download (▼) with ratio for today, yesterday, this
   week (Mon–today), last 7 days, this month and all time, plus a 7-day grouped bar chart (hover for
   exact values) with a table view. Backed by `GET /api/traffic`, which reads vnstat 1.x or 2.x

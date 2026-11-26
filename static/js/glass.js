@@ -438,6 +438,97 @@
     });
   }
 
+  /* ============================================================ server identity */
+  let clock = null;          // { skew, tz, offsetMin }
+  /* weather glyphs: drawn SVG so they look the same on every OS (no emoji font needed) */
+  const SUN = `<circle cx="24" cy="24" r="9" fill="url(#gSun)"/><g stroke="#ffcf5c" stroke-width="2.6" stroke-linecap="round">${[0, 45, 90, 135, 180, 225, 270, 315].map((a) => `<line x1="24" y1="7" x2="24" y2="10.5" transform="rotate(${a} 24 24)"/>`).join("")}</g>`;
+  const MOON = `<path d="M30 8a15 15 0 1 0 10 25A12 12 0 0 1 30 8z" fill="url(#gMoon)"/>`;
+  const CLOUD = (y = 0, o = 1) => `<path transform="translate(0 ${y})" opacity="${o}" d="M15 40h20a8 8 0 0 0 .8-16A11 11 0 0 0 14.6 27 6.6 6.6 0 0 0 15 40z" fill="url(#gCloud)" stroke="rgba(255,255,255,.55)" stroke-width="1"/>`;
+  const DROPS = (n) => `<g stroke="#5aa9ff" stroke-width="2.4" stroke-linecap="round">${[16, 24, 32].slice(0, n).map((x) => `<line x1="${x}" y1="42" x2="${x - 2}" y2="47"/>`).join("")}</g>`;
+  const FLAKES = `<g fill="#e8f3ff">${[16, 24, 32].map((x, i) => `<circle cx="${x}" cy="${44 + (i % 2) * 2}" r="1.8"/>`).join("")}</g>`;
+  const BOLT = `<path d="M25 38l-5 8h5l-2 6 7-10h-5l3-4z" fill="#ffd34d"/>`;
+  const FOG = `<g stroke="rgba(230,236,248,.8)" stroke-width="2.4" stroke-linecap="round"><line x1="10" y1="42" x2="38" y2="42"/><line x1="14" y1="47" x2="34" y2="47"/></g>`;
+  const WX_SVG = (icon, day) => {
+    const orb = day ? `<g transform="translate(-2 -2) scale(.72)">${SUN}</g>` : `<g transform="translate(0 -1) scale(.7)">${MOON}</g>`;
+    const body = {
+      clear: day ? SUN : MOON, partly: orb + CLOUD(2), cloud: CLOUD(-6, .7) + CLOUD(2), fog: CLOUD(-6) + FOG,
+      drizzle: (day ? orb : "") + CLOUD(-4) + DROPS(2), rain: CLOUD(-4) + DROPS(3), snow: CLOUD(-4) + FLAKES, storm: CLOUD(-6) + BOLT,
+    }[icon] || CLOUD(0);
+    return `<svg viewBox="0 0 48 52" width="58" height="58"><defs>
+      <radialGradient id="gSun" cx=".4" cy=".35"><stop offset="0" stop-color="#fff3b0"/><stop offset="1" stop-color="#ffb020"/></radialGradient>
+      <linearGradient id="gMoon" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#f4f1ff"/><stop offset="1" stop-color="#b9b3e6"/></linearGradient>
+      <linearGradient id="gCloud" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffffff" stop-opacity=".95"/><stop offset="1" stop-color="#b8c4dc" stop-opacity=".85"/></linearGradient>
+      </defs>${body}</svg>`;
+  };
+  const fmtOffset = (m) => `UTC${m < 0 ? "−" : "+"}${String(Math.floor(Math.abs(m) / 60)).padStart(2, "0")}:${String(Math.abs(m) % 60).padStart(2, "0")}`;
+  function zoneOk(tz) { try { new Intl.DateTimeFormat(undefined, { timeZone: tz }); return true; } catch (_) { return false; } }
+  function hm(min) { const a = Math.abs(min), h = Math.floor(a / 60), m = a % 60; return (h ? h + "h" : "") + (m ? (h ? " " : "") + m + "m" : h ? "" : "0m"); }
+
+  function tickClock() {
+    if (!clock) return;
+    const now = new Date(Date.now() + clock.skew);
+    const zone = clock.tz && zoneOk(clock.tz) ? { timeZone: clock.tz } : null;
+    let t, d;
+    if (zone) {
+      t = new Intl.DateTimeFormat(undefined, { ...zone, hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false }).format(now);
+      d = new Intl.DateTimeFormat(undefined, { ...zone, weekday: "long", day: "numeric", month: "long", year: "numeric" }).format(now);
+    } else {                                   // fixed offset fallback
+      const s = new Date(now.getTime() + clock.offsetMin * 60000);
+      t = s.toISOString().slice(11, 19); d = s.toUTCString().slice(0, 16);
+    }
+    $("clockTime").textContent = t; $("clockDate").textContent = d;
+    const mine = -new Date().getTimezoneOffset(), diff = clock.offsetMin - mine;
+    $("clockYou").textContent = `You: ${new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date())}`;
+    $("clockOffset").textContent = diff === 0 ? "same time as you" : `server is ${hm(diff)} ${diff > 0 ? "ahead" : "behind"}`;
+  }
+
+  async function loadPlace() {
+    const p = await getJSON(S.api.place);
+    const tm = p.time;
+    clock = { skew: tm.epoch_ms - Date.now(), tz: tm.tz, offsetMin: tm.offset_min };
+    $("tzName").textContent = `${tm.tz && tm.tz.includes("/") && !tm.tz.startsWith("Etc/") ? tm.tz.replace(/_/g, " ") : tm.abbr} · ${fmtOffset(tm.offset_min)}`;
+    tickClock();
+
+    const g = p.geo || {}, loc = p.local || { v4: [], v6: [] };
+    const pub = g.ip || loc.v4[0] || loc.v6[0] || "–";
+    $("ipPublic").textContent = pub;
+    $("ipWhere").textContent = g.city ? `${g.flag ? g.flag + " " : ""}${g.city}, ${g.cc || g.country}` : "";
+    const rows = [];
+    loc.v4.filter((a) => a !== pub).forEach((a) => rows.push([`IPv4 · ${p.iface}`, a]));
+    if (loc.v4.includes(pub)) rows.push([`IPv4 · ${p.iface}`, "same as public"]);
+    loc.v6.slice(0, 1).forEach((a) => rows.push([`IPv6 · ${p.iface}`, a]));
+    if (g.isp) rows.push(["Provider", `${g.isp}${g.asn ? " · AS" + g.asn : ""}`, true]);
+    if (!p.lookups) rows.push(["Lookups", "disabled in swizzin.cfg", true]);
+    $("ipRows").innerHTML = rows.map(([k, v, sans]) => `<div><span>${esc(k)}</span><b class="${sans ? "sans" : ""}" title="${esc(v)}">${esc(v)}</b></div>`).join("");
+
+    const w = p.weather;
+    if (!w) {
+      $("wxIcon").textContent = "·"; $("wxTemp").textContent = "–";
+      $("wxText").textContent = p.lookups ? "Weather unavailable" : "Lookups disabled";
+      $("wxFoot").textContent = ""; return;
+    }
+    const T = (v) => (v == null ? "–" : Math.round(v) + w.units.temp);
+    const timeOnly = (iso) => (iso ? iso.slice(11, 16) : "–");
+    $("wxPlace").textContent = w.place || "";
+    $("wxIcon").innerHTML = WX_SVG(w.icon, w.is_day);
+    $("wxTemp").textContent = T(w.temp);
+    $("wxText").textContent = `${w.text} · feels like ${T(w.feels)}`;
+    $("wxFoot").innerHTML = [
+      ["H/L", `${T(w.high)} / ${T(w.low)}`], ["Humidity", w.humidity != null ? w.humidity + "%" : "–"],
+      ["Wind", w.wind != null ? `${Math.round(w.wind)} ${w.units.wind}` : "–"],
+      ["Rain", w.rain_chance != null ? w.rain_chance + "%" : "–"],
+      ["Sun", `${timeOnly(w.sunrise)}–${timeOnly(w.sunset)}`],
+    ].map(([k, v]) => `<span>${k} <b>${v}</b></span>`).join("");
+  }
+
+  document.addEventListener("click", async (e) => {
+    const b = e.target.closest(".copy"); if (!b) return;
+    const txt = $(b.dataset.copy).textContent;
+    try { await navigator.clipboard.writeText(txt); b.classList.add("done"); b.textContent = "✓"; toast(`Copied ${txt}`); }
+    catch (_) { toast("Copy not allowed on plain http — select the IP instead"); }
+    setTimeout(() => { b.classList.remove("done"); b.textContent = "⧉"; }, 1500);
+  });
+
   /* ============================================================ data transferred */
   let traffic = null;
   const DAY = new Intl.DateTimeFormat(undefined, { weekday: "short" });
@@ -601,5 +692,7 @@
     every(LIVE_MS, async () => renderLive(await getJSON(S.api.live)));
     every(60000, loadStorage);
     every(300000, loadTraffic);
+    every(300000, loadPlace);
+    setInterval(tickClock, 1000);
   }
 })();

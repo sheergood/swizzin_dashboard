@@ -49,6 +49,25 @@
 
   <main class="grid" id="grid">
     {% if admin %}
+    <!-- Server identity: clock, IP, weather -->
+    <section class="glass tile id-tile liquid" data-span="4" id="tClock">
+      <div class="tile-head"><span class="label">Server time</span><span class="muted" id="tzName"></span></div>
+      <div class="clock"><b id="clockTime">--:--:--</b><span id="clockDate">–</span></div>
+      <div class="tile-foot"><span id="clockYou">–</span><span id="clockOffset"></span></div>
+    </section>
+
+    <section class="glass tile id-tile liquid" data-span="4" id="tIp">
+      <div class="tile-head"><span class="label">IP address</span><span class="muted" id="ipWhere"></span></div>
+      <div class="ip-main"><code id="ipPublic">–</code><button class="icon-btn copy" data-copy="ipPublic" title="Copy IP" aria-label="Copy public IP">⧉</button></div>
+      <div class="ip-rows" id="ipRows"></div>
+    </section>
+
+    <section class="glass tile id-tile liquid" data-span="4" id="tWx">
+      <div class="tile-head"><span class="label">Weather</span><span class="muted" id="wxPlace"></span></div>
+      <div class="wx-main"><span class="wx-icon" id="wxIcon" aria-hidden="true">·</span><div><b id="wxTemp">–</b><span id="wxText">Loading…</span></div></div>
+      <div class="tile-foot wx-foot" id="wxFoot"></div>
+    </section>
+
     <!-- Hero tiles -->
     <section class="glass tile liquid" id="tCpu" data-span="3">
       <div class="tile-head"><span class="label">CPU</span><span class="badge" id="cpuTempBadge"></span></div>
@@ -184,6 +203,7 @@
         system: {{ url_for('api_system')|tojson }},
         storage: {{ url_for('api_storage')|tojson }},
         traffic: {{ url_for('api_traffic')|tojson }},
+        place: {{ url_for('api_place')|tojson }},
         status: {{ url_for('app_status')|tojson }},
         service: {{ url_for('service')|tojson }},
         quota: {{ url_for('quota_free')|tojson }}

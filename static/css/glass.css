@@ -106,7 +106,7 @@ html[data-refraction="on"] .liquid {
 .chip b { color: var(--ink); font-weight: 600; }
 .menu { position: relative; }
 .pill { font: inherit; color: var(--ink); background: rgba(255,255,255,.08); border: 1px solid var(--glass-edge);
-  padding: 7px 14px; border-radius: 999px; cursor: pointer; }
+  padding: 7px 14px; border-radius: 999px; cursor: pointer; white-space: nowrap; }
 .pill:hover { background: rgba(255,255,255,.14); }
 .caret { color: var(--ink-2); font-size: 11px; }
 .dropdown { position: absolute; right: 0; top: calc(100% + 10px); min-width: 230px; padding: 8px; border-radius: 18px;
@@ -159,6 +159,28 @@ html[data-refraction="on"] .liquid {
 .load { grid-template-columns: repeat(3, 1fr); width: 100%; text-align: center; }
 .load b { display: block; font-size: 26px; letter-spacing: -.02em; }
 .load small { color: var(--ink-2); font-size: 11.5px; }
+
+/* identity strip: clock / ip / weather */
+.id-tile { min-height: 168px; }
+@media (max-width: 1200px) { .id-tile[data-span="4"] { grid-column: span 12; } }
+@media (min-width: 761px) and (max-width: 1200px) { .id-tile[data-span="4"] { grid-column: span 4; } .id-tile .tile-foot { flex-direction: column; align-items: flex-start; gap: 2px; } }
+.clock { flex: 1; display: flex; flex-direction: column; justify-content: center; }
+.clock b { font-size: clamp(34px, 3.4vw, 46px); font-weight: 650; letter-spacing: -.03em; line-height: 1; font-variant-numeric: tabular-nums; }
+.clock span { color: var(--ink-2); margin-top: 6px; font-size: 13px; }
+.ip-main { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.ip-main code { font-family: var(--mono); font-size: clamp(20px, 2vw, 26px); font-weight: 600; letter-spacing: -.01em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ip-rows { display: flex; flex-direction: column; gap: 5px; font-size: 12.5px; }
+.ip-rows div { display: flex; justify-content: space-between; gap: 10px; min-width: 0; }
+.ip-rows span { color: var(--ink-2); flex: none; }
+.ip-rows b { font-weight: 500; font-family: var(--mono); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ip-rows b.sans { font-family: var(--sans); font-size: 12.5px; }
+.wx-main { flex: 1; display: flex; align-items: center; gap: 14px; }
+.wx-icon { display: grid; place-items: center; width: 58px; height: 58px; flex: none; filter: drop-shadow(0 6px 16px rgba(0,0,0,.35)); }
+.wx-main b { display: block; font-size: 36px; letter-spacing: -.03em; line-height: 1; }
+.wx-main span { color: var(--ink-2); font-size: 13px; }
+.wx-foot { flex-wrap: wrap; gap: 4px 14px; justify-content: flex-start; }
+.wx-foot b { color: var(--ink); font-weight: 600; }
+.copy.done { color: var(--good); }
 
 /* status badge — color always paired with icon + text */
 .badge { font-size: 11.5px; font-weight: 600; padding: 3px 9px; border-radius: 999px; display: inline-flex; gap: 5px; align-items: center;
