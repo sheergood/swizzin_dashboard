@@ -1,72 +1,65 @@
-<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01//EN" "http://www.w3.org/TR/html4/strict.dtd">
-<html lang="en">
-    <head>
-          <meta name="robots" content="noindex">
-        <title>{{ title }}</title>
-        <script type="text/javascript" src="{{ url_for('static', filename='js/httpauth.js') }}"></script>
-        <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
-        <link rel="shortcut icon" href="{{ url_for('static', filename='img/favicon/favicon.ico') }}">
-        <link rel="stylesheet" type="text/css" href="https://stackpath.bootstrapcdn.com/bootswatch/4.4.1/darkly/bootstrap.min.css">
-        <style type="text/css">
-html,
-body {
-  height: 100%;
-}
-
-body {
-  display: -ms-flexbox;
-  display: -webkit-box;
-  display: flex;
-  -ms-flex-align: center;
-  -ms-flex-pack: center;
-  -webkit-box-align: center;
-  align-items: center;
-  -webkit-box-pack: center;
-  justify-content: center;
-  padding-top: 40px;
-  padding-bottom: 40px;
-}
-
-.form-signin {
-  width: 100%;
-  max-width: 330px;
-  padding: 15px;
-  margin: 0 auto;
-}
-.form-signin .checkbox {
-  font-weight: 400;
-}
-.form-signin .form-control {
-  position: relative;
-  box-sizing: border-box;
-  height: auto;
-  padding: 10px;
-  font-size: 16px;
-}
-.form-signin .form-control:focus {
-  z-index: 2;
-}
-.form-signin input[type="text"] {
-  margin-bottom: -1px;
-  border-bottom-right-radius: 0;
-  border-bottom-left-radius: 0;
-}
-.form-signin input[type="password"] {
-  margin-bottom: 10px;
-  border-top-left-radius: 0;
-  border-top-right-radius: 0;
-}
-
-        </style>
-    </head>
-    <body class="text-center">
-      <div class="form-signin">
-        <img class="mb-4" src="{{ url_for('static', filename='img/logo-sm.png') }}" alt="" width="72" height="72">
-        <!--<h1 class="h3 mb-3 font-weight-normal">swizzin login</h1>-->
-        <label for="basic-username" class="sr-only">Username</label><input name="username" type="text" id="basic-username" class="form-control" placeholder="Username" required autofocus>
-        <label for="basic-password" class="sr-only">Password</label><input name="password" type="password" id="basic-password" class="form-control" placeholder="Password" required>
-        <input type="submit" value="Login" id="btnsubmit" class="btn btn-lg btn-primary btn-block" onclick="login()">
-      </div>
-  </body>
-
+<!doctype html>
+<html lang="en" data-refraction="on">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <meta name="color-scheme" content="dark">
+  <title>{{ title }}</title>
+  <link rel="shortcut icon" href="{{ url_for('static', filename='img/favicon/favicon.ico') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/glass.css') }}">
+  <style>
+    body { min-height: 100vh; display: grid; place-items: center; padding: 24px; }
+    .login { width: min(380px, 100%); padding: 34px 30px 28px; display: flex; flex-direction: column; gap: 14px; text-align: center; }
+    .login img { width: 64px; height: 64px; margin: 0 auto 4px; filter: drop-shadow(0 6px 18px rgba(51,140,237,.45)); }
+    .login h1 { margin: 0; font-size: 20px; font-weight: 700; }
+    .login p { color: var(--ink-2); margin: -6px 0 8px; }
+    .field { text-align: left; display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: var(--ink-2); }
+    .field input { font: inherit; font-size: 15px; color: var(--ink); background: rgba(0,0,0,.25); border: 1px solid var(--line);
+      border-radius: 14px; padding: 12px 14px; outline: none; transition: border-color .2s, box-shadow .2s; }
+    .field input:focus { border-color: rgba(51,140,237,.7); box-shadow: 0 0 0 4px rgba(51,140,237,.18); }
+    .go { font: inherit; font-weight: 650; font-size: 15px; color: #fff; border: 0; border-radius: 14px; padding: 12px; cursor: pointer; margin-top: 6px;
+      background: linear-gradient(180deg, #4a9bf2, #2370cd); box-shadow: inset 0 1px 0 rgba(255,255,255,.35), 0 10px 24px -8px rgba(51,140,237,.8); }
+    .go:disabled { opacity: .6; cursor: progress; }
+    .err { min-height: 18px; font-size: 13px; color: var(--serious); }
+  </style>
+</head>
+<body>
+  <div class="ambient" aria-hidden="true"><span class="blob b1"></span><span class="blob b2"></span><span class="blob b3"></span><span class="blob b4"></span><div class="grain"></div></div>
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <filter id="liquid" x="0%" y="0%" width="100%" height="100%" color-interpolation-filters="sRGB">
+      <feTurbulence type="fractalNoise" baseFrequency="0.008 0.012" numOctaves="2" seed="7" result="noise"/>
+      <feGaussianBlur in="noise" stdDeviation="2" result="soft"/>
+      <feDisplacementMap in="SourceGraphic" in2="soft" scale="28" xChannelSelector="R" yChannelSelector="G"/>
+    </filter>
+  </svg>
+  <form class="login glass liquid" id="form" autocomplete="on">
+    <img src="{{ url_for('static', filename='img/logo-sm.png') }}" alt="">
+    <h1>swizzin</h1>
+    <p>Sign in to your server</p>
+    <label class="field">Username<input name="username" id="basic-username" autocomplete="username" required autofocus></label>
+    <label class="field">Password<input name="password" type="password" id="basic-password" autocomplete="current-password" required></label>
+    <button class="go" id="btnsubmit" type="submit">Sign in</button>
+    <div class="err" id="err" role="alert"></div>
+  </form>
+  <script>
+    document.getElementById("form").addEventListener("submit", function (e) {
+      e.preventDefault();
+      var u = document.getElementById("basic-username").value, p = document.getElementById("basic-password").value;
+      var path = location.pathname.split("/"), url = path.slice(0, path.length - 1).join("/") + "/";
+      var btn = document.getElementById("btnsubmit"), err = document.getElementById("err");
+      btn.disabled = true; err.textContent = "";
+      var x = new XMLHttpRequest();
+      x.open("GET", url, true, u, p);        // browser caches the Basic credentials on success
+      x.onload = function () {
+        btn.disabled = false;
+        if (x.status === 200) location.href = url;
+        else if (x.status === 429) err.textContent = "Too many attempts — try again in a minute.";
+        else err.textContent = "Incorrect username or password.";
+      };
+      x.onerror = function () { btn.disabled = false; err.textContent = "Server unreachable."; };
+      x.send();
+    });
+  </script>
+</body>
 </html>
