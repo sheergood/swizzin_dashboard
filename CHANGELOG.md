@@ -15,6 +15,16 @@ seedbox servers. Format follows [Keep a Changelog](https://keepachangelog.com/en
   syntax, smoke test.
 
 ### Added
+- **App sidebar** like the original panel: every installed app with its icon, name and a
+  running/stopped dot, opening in a new tab. A button at the bottom collapses it to icons only
+  (remembered per browser); on phones it becomes a slide-in drawer opened from the ☰ button.
+- **Slim status bar** replaces the three large time / IP / weather tiles: one 48 px row with the
+  clock (AM/PM), public IPv4 with copy button and location, and current weather with the 📍
+  toggle. Clicking a section opens a small popover with the details (date, offset from your
+  time, 12/24-hour switch; IPv4 + IPv6 with copy, local IPs, provider; feels-like, high/low,
+  humidity, wind, rain chance, sunrise–sunset).
+- Country shown as a small code chip (e.g. `NL`) instead of a flag emoji, which Windows
+  displays as plain letters.
 - **Security card** — fail2ban status (protecting / not running), banned now, bans in 24 h and
   7 d, currently failing, per-jail counts and the 25 most recent bans with jail, failures, repeat
   count, time and whether the ban is still active with time left. Data comes from

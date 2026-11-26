@@ -478,20 +478,25 @@
     const mine = -new Date().getTimezoneOffset(), diff = clock.offsetMin - mine;
     $("clockYou").textContent = `Your time ${new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit", hour12: h12 }).format(new Date())}`;
     $("clockOffset").textContent = diff === 0 ? "same time as you" : `server is ${hm(diff)} ${diff > 0 ? "ahead" : "behind"}`;
+    $("clockBtn").textContent = h12 ? "Switch to 24-hour" : "Switch to 12-hour";
   }
 
   async function loadPlace() {
     const p = await getJSON(S.api.place);
     const tm = p.time;
     clock = { skew: tm.epoch_ms - Date.now(), tz: tm.tz, offsetMin: tm.offset_min };
-    $("tzName").textContent = `${tm.tz && tm.tz.includes("/") && !tm.tz.startsWith("Etc/") ? tm.tz.replace(/_/g, " ") : tm.abbr} · ${fmtOffset(tm.offset_min)}`;
+    const named = tm.tz && tm.tz.includes("/") && !tm.tz.startsWith("Etc/");
+    $("tzName").textContent = `${named ? tm.tz.replace(/_/g, " ") : tm.abbr} · ${fmtOffset(tm.offset_min)}`;
+    $("tzShort").textContent = named ? tm.tz.split("/").pop().replace(/_/g, " ") : tm.abbr;
     tickClock();
 
     const g = p.geo || {}, loc = p.local || { v4: [], v6: [] }, pub = p.public || {};
     const setIp = (id, v) => { const el = $(id); el.textContent = v || "Not available"; el.classList.toggle("none", !v); el.title = v || "";
       el.nextElementSibling.hidden = !v; };
-    setIp("ip4", pub.v4); setIp("ip6", pub.v6);
-    $("ipWhere").textContent = g.city ? `${g.flag ? g.flag + " " : ""}${g.city}, ${g.cc || g.country}` : "";
+    setIp("ip4", pub.v4); setIp("ip4b", pub.v4); setIp("ip6", pub.v6);
+    // country code chip instead of a flag emoji: Windows renders flag emoji as plain letters
+    const where = g.city ? `${g.cc ? `<span class="cc">${esc(g.cc)}</span>` : ""}${esc(g.city)}` : "";
+    $("ipWhere").innerHTML = where; $("ipWhere2").innerHTML = g.city ? `${where}, ${esc(g.country || g.cc)}` : "";
     const rows = [];
     // only show interface addresses when they differ from the public ones (NAT / extra IPs)
     loc.v4.filter((a) => a !== pub.v4).slice(0, 1).forEach((a) => rows.push([`Local IPv4 · ${p.iface}`, a]));
@@ -507,16 +512,18 @@
   let serverWeather = null, serverLookups = true;
   function renderWeather(w, lookups) {
     if (!w) {
-      $("wxIcon").textContent = "·"; $("wxTemp").textContent = "–";
+      $("wxIcon").innerHTML = ""; $("wxTemp").textContent = "–";
       $("wxText").textContent = lookups ? "Weather unavailable" : "Lookups disabled";
+      $("wxPlace").textContent = ""; $("wxPlace2").textContent = ""; $("wxFeels").textContent = "–";
       $("wxFoot").textContent = ""; return;
     }
     const T = (v) => (v == null ? "–" : Math.round(v) + w.units.temp);
     const timeOnly = (iso) => (iso ? iso.slice(11, 16) : "–");
-    $("wxPlace").textContent = w.place || "";
+    $("wxPlace").textContent = w.place || ""; $("wxPlace2").textContent = w.place || "";
     $("wxIcon").innerHTML = WX_SVG(w.icon, w.is_day);
     $("wxTemp").textContent = T(w.temp);
-    $("wxText").textContent = `${w.text} · feels like ${T(w.feels)}`;
+    $("wxText").textContent = w.text;
+    $("wxFeels").textContent = `${w.text} · feels like ${T(w.feels)}`;
     $("wxFoot").innerHTML = [
       ["H/L", `${T(w.high)} / ${T(w.low)}`], ["Humidity", w.humidity != null ? w.humidity + "%" : "–"],
       ["Wind", w.wind != null ? `${Math.round(w.wind)} ${w.units.wind}` : "–"],
@@ -555,6 +562,30 @@
     });
     $("clockBtn").addEventListener("click", () => { store.set("clock24", store.get("clock24", "off") === "on" ? "off" : "on"); tickClock(); });
   }
+
+  /* ------------------------------------------------------------ status-bar popovers */
+  let openPop = null;
+  function closePop() {
+    if (!openPop) return;
+    openPop.pop.hidden = true; openPop.btn.setAttribute("aria-expanded", "false"); openPop = null;
+  }
+  function placePop(pop, anchor) {
+    const r = anchor.getBoundingClientRect(), w = pop.offsetWidth;
+    const left = Math.max(12, Math.min(r.left, innerWidth - w - 12));
+    pop.style.left = left + scrollX + "px"; pop.style.top = r.bottom + scrollY + 8 + "px";
+  }
+  document.addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-pop]");
+    if (btn) {
+      const pop = $(btn.dataset.pop), same = openPop && openPop.pop === pop;
+      closePop();
+      if (!same) { pop.hidden = false; placePop(pop, btn.closest(".sb") || btn); btn.setAttribute("aria-expanded", "true"); openPop = { pop, btn }; }
+      return;
+    }
+    if (openPop && !openPop.pop.contains(e.target)) closePop();
+  });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape") closePop(); });
+  addEventListener("resize", () => openPop && placePop(openPop.pop, openPop.btn.closest(".sb") || openPop.btn));
 
   /* ------------------------------------------------------------ fail2ban */
   function ago(sec) {
@@ -678,6 +709,39 @@
     }));
   }
 
+  /* ============================================================ sidebar */
+  function applySide() {
+    const mini = store.get("side", "full") === "mini";
+    document.documentElement.dataset.side = mini ? "mini" : "full";
+    const t = $("sideToggle"); t.setAttribute("aria-expanded", String(!mini));
+    t.title = mini ? "Expand sidebar" : "Collapse sidebar"; t.setAttribute("aria-label", t.title);
+  }
+  function setDrawer(open) {
+    document.documentElement.dataset.drawer = open ? "open" : "closed"; $("sideBackdrop").hidden = !open;
+  }
+  (function buildSide() {
+    const list = $("sideList");
+    S.pages.filter((p) => p.url).sort((a, b) => a.pretty_name.localeCompare(b.pretty_name)).forEach((p) => {
+      const a = document.createElement("a");
+      a.className = "side-item"; a.href = p.url; a.target = "_blank"; a.rel = "noopener"; a.title = p.pretty_name; a.dataset.app = p.name;
+      a.innerHTML = `<span class="side-ico"><img src="${S.iconBase}${encodeURIComponent(p.img)}.png" alt="" loading="lazy"
+        onerror="this.replaceWith(document.createTextNode('${esc(p.pretty_name[0])}'))"><i class="side-dot"></i></span><span class="side-label">${esc(p.pretty_name)}</span>`;
+      list.appendChild(a);
+    });
+    applySide();
+    $("sideToggle").addEventListener("click", () => { store.set("side", store.get("side", "full") === "mini" ? "full" : "mini"); applySide(); });
+    $("sideOpen").addEventListener("click", () => setDrawer(true));
+    $("sideBackdrop").addEventListener("click", () => setDrawer(false));
+    document.addEventListener("keydown", (e) => { if (e.key === "Escape") setDrawer(false); });
+  })();
+  function sideDots() {
+    document.querySelectorAll(".side-item[data-app]").forEach((a) => {
+      const st = statusMap[a.dataset.app], dot = a.querySelector(".side-dot");
+      dot.className = "side-dot" + (st ? (st.active ? " on" : " off") : "");
+      a.title = a.querySelector(".side-label").textContent + (st ? (st.active ? " · running" : " · stopped") : "");
+    });
+  }
+
   /* ============================================================ apps */
   let statusMap = {};
   const apps = S.pages.slice().sort((a, b) => a.pretty_name.localeCompare(b.pretty_name));
@@ -710,6 +774,7 @@
       statusMap = {}; list.forEach((s) => (statusMap[s.name] = s));
     } catch (_) { /* keep previous */ }
     if (!document.querySelector(".app-actions :focus")) renderApps();
+    sideDots();
   }
 
   async function service(app, fn) {
