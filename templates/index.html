@@ -1,80 +1,175 @@
-{% import "macros.html" as macros %}
-<html>
+<!doctype html>
+<html lang="en" data-refraction="on">
 <head>
-  <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#07080d">
   <title>{{ title }}</title>
   <link rel="shortcut icon" href="{{ url_for('static', filename='img/favicon/favicon.ico') }}">
-  <link rel="stylesheet" type="text/css" href="https://stackpath.bootstrapcdn.com/bootswatch/4.4.1/darkly/bootstrap.min.css">
-  <link href="https://cdn.jsdelivr.net/gh/gitbrent/bootstrap4-toggle@3.6.1/css/bootstrap4-toggle.min.css" rel="stylesheet">
-  <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='css/swizzin.css')}}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/glass.css') }}">
 </head>
 <body>
-<div class="d-flex" id="wrapper">
-  {{macros.build_sidebar(pages=pages, vendor=vendor)}}
-  {% if config.SHAREDSERVER == True %}
-    {{macros.build_nav_shared(user=user, apps=pages, vendor=vendor)}}
-  {% else %}
-    {{macros.build_nav(user=user, apps=pages)}}
-  {% endif %}
-  <!-- #page-content-wrapper -->
-  <div class="container-fluid">
-      <div class="card-columns">
-          {% include 'glance.html' %}
-          {{ macros.build_app_table(apps=pages) }}
-          {% include 'systeminfo.html' %}
-          {% if quota == True %}
-            {% include 'quotainfo.html' %}
-          {% endif %}
-          {% if (quota == False or config.ADMIN_USER == user) %}
-            {% include 'diskinfo.html' %}
-          {% endif %}
-          {% include 'raminfo.html' %}
-          {% if (config.SHAREDSERVER == True or config.ADMIN_USER == user) %}
-            {% include 'netinfo.html' %}
-          {% endif %}
+  <!-- Ambient light field the glass refracts -->
+  <div class="ambient" aria-hidden="true">
+    <span class="blob b1"></span><span class="blob b2"></span><span class="blob b3"></span><span class="blob b4"></span>
+    <div class="grain"></div>
+  </div>
+
+  <!-- Liquid-glass displacement filter (Chromium applies it to backdrop-filter; others fall back to blur) -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <filter id="liquid" x="0%" y="0%" width="100%" height="100%" color-interpolation-filters="sRGB">
+      <feTurbulence type="fractalNoise" baseFrequency="0.008 0.012" numOctaves="2" seed="7" result="noise"/>
+      <feGaussianBlur in="noise" stdDeviation="2" result="soft"/>
+      <feDisplacementMap in="SourceGraphic" in2="soft" scale="28" xChannelSelector="R" yChannelSelector="G"/>
+    </filter>
+  </svg>
+
+  <header class="topbar glass liquid">
+    <div class="brand">
+      <img src="{{ url_for('static', filename='img/favicon/favicon-32x32.png') }}" alt="" class="brand-mark" onerror="this.style.display='none'">
+      <div>
+        <div class="host" id="host">swizzin</div>
+        <div class="sub" id="sysline">{{ user }}</div>
       </div>
     </div>
-  <!-- /#page-content-wrapper -->
-</div>
-<!-- /#body-content-wrapper -->
+    <div class="chips" id="chips"></div>
+    <nav class="menu">
+      <button class="pill" id="menuBtn" aria-haspopup="true" aria-expanded="false">{{ user }} <span class="caret">▾</span></button>
+      <div class="dropdown glass" id="menu" hidden>
+        <label class="row-toggle"><span>Liquid refraction</span><input type="checkbox" id="optRefraction" checked><i></i></label>
+        <label class="row-toggle"><span>Ambient motion</span><input type="checkbox" id="optMotion" checked><i></i></label>
+        <hr>
+        {% if admin and 'netdata' in pages|map(attribute='name') %}<a href="{{ url_for('stats') }}">Netdata stats</a>{% endif %}
+        <a href="{{ url_for('classic') }}">Classic dashboard</a>
+        <a href="{{ url_for('logout') }}">Log out</a>
+      </div>
+    </nav>
+  </header>
 
-<script src="https://ajax.googleapis.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
-<script src="https://stackpath.bootstrapcdn.com/bootstrap/4.4.1/js/bootstrap.bundle.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/3.0.4/socket.io.js"></script>
-<script src="https://cdn.jsdelivr.net/gh/gitbrent/bootstrap4-toggle@3.6.1/js/bootstrap4-toggle.min.js"></script>
-<script src="{{ url_for('static', filename='js/swizzin.js') }}"></script>
+  <main class="grid" id="grid">
+    {% if admin %}
+    <!-- Hero tiles -->
+    <section class="glass tile liquid" id="tCpu" data-span="3">
+      <div class="tile-head"><span class="label">CPU</span><span class="badge" id="cpuTempBadge"></span></div>
+      <div class="tile-body">
+        <svg class="ring" viewBox="0 0 120 120" aria-hidden="true"><circle class="track" cx="60" cy="60" r="50"/><circle class="arc" id="cpuArc" cx="60" cy="60" r="50"/></svg>
+        <div class="ring-val"><b id="cpuPct">–</b><small>% used</small></div>
+      </div>
+      <div class="tile-foot"><span id="cpuFreq">– MHz</span><span id="cpuIowait">iowait –</span></div>
+    </section>
 
+    <section class="glass tile liquid" id="tMem" data-span="3">
+      <div class="tile-head"><span class="label">Memory</span><span class="muted" id="memTotal"></span></div>
+      <div class="tile-body">
+        <svg class="ring" viewBox="0 0 120 120" aria-hidden="true"><circle class="track" cx="60" cy="60" r="50"/><circle class="arc" id="memArc" cx="60" cy="60" r="50"/></svg>
+        <div class="ring-val"><b id="memPct">–</b><small>% used</small></div>
+      </div>
+      <div class="tile-foot"><span id="memUsed">–</span><span id="swapUsed">swap –</span></div>
+    </section>
 
-<script>
-{{ macros.build_widget_js() }}
-{% if config.SHAREDSERVER == True %}
-{{ macros.build_widget_js_shared() }}
-{% endif %}
+    <section class="glass tile liquid" id="tNet" data-span="3">
+      <div class="tile-head"><span class="label">Network</span><span class="muted" id="netIface"></span></div>
+      <div class="tile-body net-now">
+        <div><span class="key"><i class="dot s1"></i>Down</span><b id="netRx">–</b></div>
+        <div><span class="key"><i class="dot s2"></i>Up</span><b id="netTx">–</b></div>
+      </div>
+      <div class="tile-foot"><span id="netLink">link –</span><span id="netCc">–</span></div>
+    </section>
 
-{% if quota == True %}
-(function quotausage() {
-    $.get('{{ url_for('quota_free') }}', function(data) {
-        var percent = Math.trunc(data["quota"]['perutil']);
-        $("#quotafree").html(data["quota"]['diskfree']);
-        $("#quotaused").html(data["quota"]['diskused']);
-        $("#quotatotal").html(data["quota"]['disktotal']);
-        $("#quotapercent").html(data["quota"]['perutil']);
-        if (Number(data["quota"]['perutil']) > 90) {
-          $("#quotaindicator.systemindicator").addClass("bg-danger").removeClass("bg-success bg-warning");
-          $("#quotaprogress").css("width", percent + "%").attr("aria-valuenow", percent).addClass("bg-danger").removeClass("bg-success bg-warning");
-        } else if (Number(data["quota"]['perutil']) > 75) {
-          $("#quotaindicator.systemindicator").addClass("bg-warning").removeClass("bg-success bg-danger");
-          $("#quotaprogress").css("width", percent + "%").attr("aria-valuenow", percent).addClass("bg-warning").removeClass("bg-success bg-danger");
-        } else {
-          $("#quotaindicator.systemindicator").addClass("bg-success").removeClass("bg-warning bg-danger");
-          $("#quotaprogress").css("width", percent + "%").attr("aria-valuenow", percent).addClass("bg-success").removeClass("bg-danger bg-warning");
-        }
-        setTimeout(function(){quotausage()}, 60000);
-    });
-})();
-{% endif %}
+    <section class="glass tile liquid" id="tLoad" data-span="3">
+      <div class="tile-head"><span class="label">Load average</span><span class="muted" id="loadThreads"></span></div>
+      <div class="tile-body load">
+        <div><b id="load1">–</b><small>1 min</small></div>
+        <div><b id="load5">–</b><small>5 min</small></div>
+        <div><b id="load15">–</b><small>15 min</small></div>
+      </div>
+      <div class="tile-foot"><span id="uptime">up –</span><span id="loadPct">–</span></div>
+    </section>
 
-</script>
+    <!-- CPU detail -->
+    <section class="glass card" data-span="7">
+      <div class="card-head">
+        <div><h2>Processor</h2><p class="muted" id="cpuModel">–</p></div>
+        <div class="stat-row" id="cpuStats"></div>
+      </div>
+      <div class="chart" id="cpuChart" role="img" aria-label="CPU usage over the last 3 minutes"></div>
+      <div class="sub-head"><span>Per-thread load</span><span class="muted" id="coreTempsLine"></span></div>
+      <div class="cores" id="cores"></div>
+    </section>
 
+    <!-- Network detail -->
+    <section class="glass card" data-span="5">
+      <div class="card-head">
+        <div><h2>Throughput</h2><p class="muted">Last 3 minutes · <span id="netIface2">–</span></p></div>
+        <div class="legend"><span><i class="dot s1"></i>Download</span><span><i class="dot s2"></i>Upload</span></div>
+      </div>
+      <div class="chart" id="netChart" role="img" aria-label="Network throughput over the last 3 minutes"></div>
+      <div class="kv" id="netTotals"></div>
+    </section>
+
+    <!-- Drives -->
+    <section class="glass card" data-span="12">
+      <div class="card-head">
+        <div><h2>Drives</h2><p class="muted" id="smartNote">SMART health, wear and live I/O</p></div>
+      </div>
+      <div class="drives" id="drives"></div>
+    </section>
+
+    <!-- GPU -->
+    <section class="glass card" data-span="5" id="gpuCard" hidden>
+      <div class="card-head"><div><h2>Graphics</h2><p class="muted" id="gpuNote">–</p></div></div>
+      <div id="gpus"></div>
+    </section>
+
+    <!-- Memory + mounts + sensors -->
+    <section class="glass card" data-span="7" id="memCard">
+      <div class="card-head"><div><h2>Memory &amp; storage</h2><p class="muted">RAM breakdown and filesystem usage</p></div></div>
+      <div id="memBreak"></div>
+      <div class="sub-head"><span>Filesystems</span></div>
+      <div id="mounts"></div>
+      <div class="sub-head" id="sensorsHead" hidden><span>Other sensors</span></div>
+      <div class="sensors" id="sensors"></div>
+    </section>
+    {% endif %}
+
+    {% if quota %}
+    <section class="glass card" data-span="{{ 12 if not admin else 4 }}">
+      <div class="card-head"><div><h2>Your quota</h2><p class="muted" id="quotaLine">–</p></div></div>
+      <div id="quota"></div>
+    </section>
+    {% endif %}
+
+    <!-- Services -->
+    <section class="glass card" data-span="12">
+      <div class="card-head">
+        <div><h2>Applications</h2><p class="muted" id="svcSummary">–</p></div>
+        <input class="search" id="svcSearch" type="search" placeholder="Filter apps…" aria-label="Filter applications">
+      </div>
+      <div class="apps" id="apps"></div>
+    </section>
+  </main>
+
+  <div class="tooltip glass" id="tip" role="status" hidden></div>
+  <div class="toast glass" id="toast" role="status" hidden></div>
+
+  <script>
+    window.SWZ = {
+      admin: {{ 'true' if admin else 'false' }},
+      quota: {{ 'true' if quota else 'false' }},
+      user: {{ user|tojson }},
+      pages: {{ pages|tojson }},
+      iconBase: {{ url_for('static', filename='img/apps/')|tojson }},
+      api: {
+        live: {{ url_for('api_live')|tojson }},
+        system: {{ url_for('api_system')|tojson }},
+        storage: {{ url_for('api_storage')|tojson }},
+        status: {{ url_for('app_status')|tojson }},
+        service: {{ url_for('service')|tojson }},
+        quota: {{ url_for('quota_free')|tojson }}
+      }
+    };
+  </script>
+  <script src="{{ url_for('static', filename='js/glass.js') }}"></script>
 </body>
 </html>

@@ -62,6 +62,7 @@ if app.config['RATELIMIT_ENABLED'] == True:
     )
 
 from core.util import *
+import core.hardware as hw
 
 #Prepare the background threads
 thread = None
@@ -196,7 +197,40 @@ def index(user):
         vendor = "sbio"
     else:
         vendor = "swizzin"
-    return flask.render_template('index.html', title='{user} - swizzin dashboard'.format(user=user), user=user, pages=pages, quota=quota, vendor=vendor, mounts=mounts, async_mode=socketio.async_mode)
+    return flask.render_template('index.html', title='{user} - swizzin'.format(user=user), user=user, pages=pages, quota=quota, vendor=vendor, mounts=mounts, admin=_is_admin(user))
+
+@app.route('/classic')
+@htpasswd.required
+def classic(user):
+    pages = generate_page_list(user)
+    mounts = get_mounts()
+    quota = os.path.isfile("/install/.quota.lock")
+    vendor = "sbio" if os.path.isfile("/install/.sbio.lock") else "swizzin"
+    return flask.render_template('classic.html', title='{user} - swizzin dashboard'.format(user=user), user=user, pages=pages, quota=quota, vendor=vendor, mounts=mounts, async_mode=socketio.async_mode)
+
+def _is_admin(user):
+    return user == admin_user or not app.config['SHAREDSERVER']
+
+@app.route('/api/system')
+@htpasswd.required
+def api_system(user):
+    if not _is_admin(user):
+        return flask.jsonify({"error": "forbidden"}), 403
+    return flask.jsonify(hw.system())
+
+@app.route('/api/live')
+@htpasswd.required
+def api_live(user):
+    if not _is_admin(user):
+        return flask.jsonify({"error": "forbidden"}), 403
+    return flask.jsonify(hw.live())
+
+@app.route('/api/storage')
+@htpasswd.required
+def api_storage(user):
+    if not _is_admin(user):
+        return flask.jsonify({"error": "forbidden"}), 403
+    return flask.jsonify({"mounts": hw.mounts_usage(get_mounts()), "drives": hw.drives()})
 
 @socketio.on('connect', namespace='/websocket')
 def socket_connect():
