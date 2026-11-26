@@ -22,6 +22,14 @@ import subprocess as sp
 import threading
 import time
 
+def _run(cmd, timeout):
+    """stdout of cmd as text ('' on any failure). Python 3.6 compatible."""
+    try:
+        return sp.run(cmd, stdout=sp.PIPE, stderr=sp.DEVNULL, universal_newlines=True, timeout=timeout).stdout or ""
+    except Exception:
+        return ""
+
+
 import requests
 
 _lock = threading.Lock()
@@ -67,7 +75,7 @@ def local_addresses(iface):
     v4, v6 = [], []
     if iface and shutil.which("ip"):
         try:
-            out = sp.run(["ip", "-j", "addr", "show", "dev", iface], capture_output=True, text=True, timeout=3).stdout
+            out = _run(["ip", "-j", "addr", "show", "dev", iface], 3)
             for link in json.loads(out or "[]"):
                 for a in link.get("addr_info", []):
                     if a.get("scope") != "global":
@@ -92,9 +100,36 @@ def local_addresses(iface):
     return {"v4": v4, "v6": v6}
 
 
-def _lookup_geo():
+def _is_public(ip):
+    import ipaddress
     try:
-        r = requests.get("https://ipwho.is/", headers=UA, timeout=6).json()
+        a = ipaddress.ip_address(ip)
+        return a.is_global
+    except Exception:
+        return False
+
+
+def _public_ips(local):
+    """Public IPv4 and IPv6. Interface addresses are used when they are already public (typical on
+    dedicated servers); otherwise ask ipify over the matching protocol."""
+    v4 = next((a for a in local["v4"] if _is_public(a)), None)
+    v6 = next((a for a in local["v6"] if _is_public(a)), None)
+    if not v4:
+        try:
+            v4 = requests.get("https://api.ipify.org", headers=UA, timeout=5).text.strip() or None
+        except Exception:
+            v4 = None
+    if not v6:
+        try:
+            v6 = requests.get("https://api6.ipify.org", headers=UA, timeout=4).text.strip() or None
+        except Exception:
+            v6 = None
+    return {"v4": v4 if v4 and ":" not in v4 else None, "v6": v6 if v6 and ":" in v6 else None}
+
+
+def _lookup_geo(ip=None):
+    try:
+        r = requests.get("https://ipwho.is/" + (ip or ""), headers=UA, timeout=6).json()
         if r.get("success"):
             conn = r.get("connection") or {}
             return {"ip": r.get("ip"), "city": r.get("city"), "region": r.get("region"),
@@ -105,7 +140,7 @@ def _lookup_geo():
     except Exception:
         pass
     try:
-        r = requests.get("https://ipinfo.io/json", headers=UA, timeout=6).json()
+        r = requests.get("https://ipinfo.io/{}json".format(ip + "/" if ip else ""), headers=UA, timeout=6).json()
         lat, lon = (r.get("loc") or ",").split(",")
         org = r.get("org") or ""
         asn, _, isp = org.partition(" ")
@@ -155,18 +190,66 @@ def _lookup_weather(lat, lon, imperial):
             "local_tz": r.get("timezone")}
 
 
+_rev = {}
+
+
+def _reverse_name(lat, lon):
+    key = (round(lat, 2), round(lon, 2))
+    if key in _rev:
+        return _rev[key]
+    name = None
+    try:
+        r = requests.get("https://api.bigdatacloud.net/data/reverse-geocode-client",
+                         params={"latitude": lat, "longitude": lon, "localityLanguage": "en"},
+                         headers=UA, timeout=6).json()
+        name = ", ".join(x for x in (r.get("city") or r.get("locality"), r.get("countryCode")) if x) or None
+    except Exception:
+        pass
+    if len(_rev) > 50:
+        _rev.clear()
+    _rev[key] = name
+    return name
+
+
+_dev_wx = {}
+
+
+def device_weather(config, lat, lon):
+    """Weather for coordinates sent by the browser (the 📍 button). Rounded to ~1 km and cached."""
+    lat, lon = round(float(lat), 2), round(float(lon), 2)
+    if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+        raise ValueError("coordinates out of range")
+    if not config.get("PLACE_LOOKUPS", True):
+        return None
+    imperial = str(config.get("WEATHER_UNITS", "metric")).lower() == "imperial"
+    key, now = (lat, lon, imperial), time.time()
+    hit = _dev_wx.get(key)
+    if hit and now - hit[0] < 900:
+        return hit[1]
+    data = dict(_lookup_weather(lat, lon, imperial), place=_reverse_name(lat, lon) or "Your location")
+    if len(_dev_wx) > 50:
+        _dev_wx.clear()
+    _dev_wx[key] = (now, data)
+    return data
+
+
 def place(config, iface):
-    out = {"time": timezone_info(), "local": local_addresses(iface), "iface": iface,
+    local = local_addresses(iface)
+    out = {"time": timezone_info(), "local": local, "iface": iface, "public": {
+               "v4": next((a for a in local["v4"] if _is_public(a)), None),
+               "v6": next((a for a in local["v6"] if _is_public(a)), None)},
            "geo": None, "weather": None, "lookups": config.get("PLACE_LOOKUPS", True)}
     if not out["lookups"]:
         return out
     now = time.time()
     with _lock:
         if _geo["data"] is None or now - _geo["t"] > 3600:
-            g = _lookup_geo()
+            pub = _public_ips(local)
+            g = _lookup_geo(pub["v4"] or pub["v6"])
             if g or _geo["data"] is None:
-                _geo.update(t=now if g else now - 3300, data=g)  # retry in 5 min on failure
+                _geo.update(t=now if g else now - 3300, data=g, pub=pub)  # retry in 5 min on failure
         out["geo"] = _geo["data"]
+        out["public"] = _geo.get("pub") or out["public"]
         lat, lon = config.get("WEATHER_LAT"), config.get("WEATHER_LON")
         where = config.get("WEATHER_PLACE")
         if lat is None or lon is None:

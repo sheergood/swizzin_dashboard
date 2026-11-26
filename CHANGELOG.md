@@ -3,9 +3,32 @@
 Fork of [liaralabs/swizzin_dashboard](https://github.com/liaralabs/swizzin_dashboard), tuned for
 seedbox servers. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased] — `custom` branch
+## [sheergood-1] — Nov 26 2026
+
+### Production safety
+- Every `/api/*` endpoint is wrapped: an error is logged and returned as JSON instead of taking
+  the panel down; the dashboard shows "unavailable" for that card only.
+- Python 3.6+ compatible (no 3.7-only `subprocess` arguments); checked by `vermin` in CI.
+- `tests/smoke.py` boots the panel with a throwaway config and requests every page and API;
+  it refuses to run where a real `swizzin.cfg` exists.
+- CI (`.github/workflows/ci.yml`) on Python 3.8 / 3.10 / 3.12: compile, 3.6 compatibility, JS
+  syntax, smoke test.
 
 ### Added
+- **Security card** — fail2ban status (protecting / not running), banned now, bans in 24 h and
+  7 d, currently failing, per-jail counts and the 25 most recent bans with jail, failures, repeat
+  count, time and whether the ban is still active with time left. Data comes from
+  `/var/lib/swizzin/fail2ban.json` written by the root `swizzin-f2b.timer` (`GET /api/fail2ban`).
+- **Clock** shows 12-hour time with AM/PM by default; click it to switch to 24-hour.
+- **IP tile** shows public IPv4 and IPv6 separately, each with a copy button (interface
+  addresses when they are public, otherwise ipify over the matching protocol), plus local
+  addresses when they differ (NAT).
+- **Weather 📍 button** switches to the browser's location (needs https; coordinates rounded to
+  ~1 km and sent only to your panel, which asks Open-Meteo; place name via BigDataCloud). Click
+  again to go back to the server's location; the choice is remembered per browser.
+- **Login page** gets a stronger liquid-glass treatment: heavier refraction, frosted grain,
+  a moving specular sweep, pointer sheen with a gentle 3D tilt and drifting glass lenses
+  (motion respects `prefers-reduced-motion`).
 - **Server time, IP and weather strip** above the hero tiles (`GET /api/place`, admin-only):
   - Live clock in the server's timezone (IANA name + UTC offset), with your local time and how
     far ahead/behind the server is.

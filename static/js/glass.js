@@ -468,17 +468,15 @@
     if (!clock) return;
     const now = new Date(Date.now() + clock.skew);
     const zone = clock.tz && zoneOk(clock.tz) ? { timeZone: clock.tz } : null;
-    let t, d;
-    if (zone) {
-      t = new Intl.DateTimeFormat(undefined, { ...zone, hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false }).format(now);
-      d = new Intl.DateTimeFormat(undefined, { ...zone, weekday: "long", day: "numeric", month: "long", year: "numeric" }).format(now);
-    } else {                                   // fixed offset fallback
-      const s = new Date(now.getTime() + clock.offsetMin * 60000);
-      t = s.toISOString().slice(11, 19); d = s.toUTCString().slice(0, 16);
-    }
-    $("clockTime").textContent = t; $("clockDate").textContent = d;
+    const h12 = store.get("clock24", "off") !== "on";
+    const tz = zone || { timeZone: "UTC" }, at = zone ? now : new Date(now.getTime() + clock.offsetMin * 60000);
+    const parts = new Intl.DateTimeFormat("en-US", { ...tz, hour: h12 ? "numeric" : "2-digit", minute: "2-digit", second: "2-digit", hour12: h12 }).formatToParts(at);
+    const get = (type) => (parts.find((p) => p.type === type) || {}).value || "";
+    $("clockTime").textContent = `${h12 ? get("hour") : get("hour").replace(/^24/, "00")}:${get("minute")}:${get("second")}`;
+    $("clockAmPm").textContent = h12 ? get("dayPeriod").toUpperCase() : "";
+    $("clockDate").textContent = new Intl.DateTimeFormat(undefined, { ...tz, weekday: "long", day: "numeric", month: "long", year: "numeric" }).format(at);
     const mine = -new Date().getTimezoneOffset(), diff = clock.offsetMin - mine;
-    $("clockYou").textContent = `You: ${new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date())}`;
+    $("clockYou").textContent = `Your time ${new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit", hour12: h12 }).format(new Date())}`;
     $("clockOffset").textContent = diff === 0 ? "same time as you" : `server is ${hm(diff)} ${diff > 0 ? "ahead" : "behind"}`;
   }
 
@@ -489,22 +487,28 @@
     $("tzName").textContent = `${tm.tz && tm.tz.includes("/") && !tm.tz.startsWith("Etc/") ? tm.tz.replace(/_/g, " ") : tm.abbr} · ${fmtOffset(tm.offset_min)}`;
     tickClock();
 
-    const g = p.geo || {}, loc = p.local || { v4: [], v6: [] };
-    const pub = g.ip || loc.v4[0] || loc.v6[0] || "–";
-    $("ipPublic").textContent = pub;
+    const g = p.geo || {}, loc = p.local || { v4: [], v6: [] }, pub = p.public || {};
+    const setIp = (id, v) => { const el = $(id); el.textContent = v || "Not available"; el.classList.toggle("none", !v); el.title = v || "";
+      el.nextElementSibling.hidden = !v; };
+    setIp("ip4", pub.v4); setIp("ip6", pub.v6);
     $("ipWhere").textContent = g.city ? `${g.flag ? g.flag + " " : ""}${g.city}, ${g.cc || g.country}` : "";
     const rows = [];
-    loc.v4.filter((a) => a !== pub).forEach((a) => rows.push([`IPv4 · ${p.iface}`, a]));
-    if (loc.v4.includes(pub)) rows.push([`IPv4 · ${p.iface}`, "same as public"]);
-    loc.v6.slice(0, 1).forEach((a) => rows.push([`IPv6 · ${p.iface}`, a]));
+    // only show interface addresses when they differ from the public ones (NAT / extra IPs)
+    loc.v4.filter((a) => a !== pub.v4).slice(0, 1).forEach((a) => rows.push([`Local IPv4 · ${p.iface}`, a]));
+    loc.v6.filter((a) => a !== pub.v6).slice(0, 1).forEach((a) => rows.push([`Other IPv6 · ${p.iface}`, a]));
     if (g.isp) rows.push(["Provider", `${g.isp}${g.asn ? " · AS" + g.asn : ""}`, true]);
     if (!p.lookups) rows.push(["Lookups", "disabled in swizzin.cfg", true]);
     $("ipRows").innerHTML = rows.map(([k, v, sans]) => `<div><span>${esc(k)}</span><b class="${sans ? "sans" : ""}" title="${esc(v)}">${esc(v)}</b></div>`).join("");
 
-    const w = p.weather;
+    serverWeather = p.weather; serverLookups = p.lookups;
+    if (store.get("wxMode", "server") !== "device") renderWeather(p.weather, p.lookups);
+  }
+
+  let serverWeather = null, serverLookups = true;
+  function renderWeather(w, lookups) {
     if (!w) {
       $("wxIcon").textContent = "·"; $("wxTemp").textContent = "–";
-      $("wxText").textContent = p.lookups ? "Weather unavailable" : "Lookups disabled";
+      $("wxText").textContent = lookups ? "Weather unavailable" : "Lookups disabled";
       $("wxFoot").textContent = ""; return;
     }
     const T = (v) => (v == null ? "–" : Math.round(v) + w.units.temp);
@@ -519,6 +523,70 @@
       ["Rain", w.rain_chance != null ? w.rain_chance + "%" : "–"],
       ["Sun", `${timeOnly(w.sunrise)}–${timeOnly(w.sunset)}`],
     ].map(([k, v]) => `<span>${k} <b>${v}</b></span>`).join("");
+  }
+
+  async function deviceWeather(ask) {
+    const btn = $("wxLocate");
+    if (!navigator.geolocation || !window.isSecureContext) {
+      toast("Device location needs the panel on https://"); store.set("wxMode", "server"); return false;
+    }
+    btn.classList.add("busy");
+    try {
+      const pos = await new Promise((ok, no) => navigator.geolocation.getCurrentPosition(ok, no,
+        { enableHighAccuracy: false, timeout: 10000, maximumAge: ask ? 0 : 30 * 60000 }));
+      const q = `?lat=${pos.coords.latitude.toFixed(3)}&lon=${pos.coords.longitude.toFixed(3)}`;
+      const r = await getJSON(S.api.weather + q);
+      if (!r.weather) throw new Error(r.error || "no data");
+      renderWeather(r.weather, true);
+      btn.setAttribute("aria-pressed", "true"); btn.title = "Showing your location — click for the server's";
+      store.set("wxMode", "device"); return true;
+    } catch (err) {
+      toast(err && err.code === 1 ? "Location permission denied" : "Couldn't get weather for your location");
+      store.set("wxMode", "server"); btn.setAttribute("aria-pressed", "false"); renderWeather(serverWeather, serverLookups);
+      return false;
+    } finally { btn.classList.remove("busy"); }
+  }
+  if (S.admin) {
+    $("wxLocate").addEventListener("click", () => {
+      if (store.get("wxMode", "server") === "device") {
+        store.set("wxMode", "server"); $("wxLocate").setAttribute("aria-pressed", "false");
+        $("wxLocate").title = "Use this device's location"; renderWeather(serverWeather, serverLookups);
+      } else deviceWeather(true);
+    });
+    $("clockBtn").addEventListener("click", () => { store.set("clock24", store.get("clock24", "off") === "on" ? "off" : "on"); tickClock(); });
+  }
+
+  /* ------------------------------------------------------------ fail2ban */
+  function ago(sec) {
+    if (sec < 60) return "just now";
+    if (sec < 3600) return Math.floor(sec / 60) + " min ago";
+    if (sec < 86400) return Math.floor(sec / 3600) + " h ago";
+    return Math.floor(sec / 86400) + " d ago";
+  }
+  async function loadF2b() {
+    const d = await getJSON(S.api.fail2ban), st = $("f2bState");
+    if (!d.available) {
+      st.className = "badge"; st.textContent = "";
+      $("f2bNote").textContent = "fail2ban";
+      $("f2bStats").innerHTML = "";
+      $("f2bList").innerHTML = `<div class="empty">Ban data appears once <code>swizzin-f2b.timer</code> is running (installed with the panel; run <code>box update</code>).</div>`;
+      return;
+    }
+    const nowS = Date.now() / 1000;
+    st.className = "badge " + (d.running ? "good" : "crit"); st.textContent = d.running ? "Protecting" : "Not running";
+    $("f2bNote").textContent = `fail2ban · updated ${ago(d.age)}`;
+    const failed = d.jails.reduce((a, j) => a + j.currently_failed, 0);
+    $("f2bStats").innerHTML = [["Banned now", d.banned_now ?? 0], ["Bans 24 h", d.bans_24h], ["Bans 7 d", d.bans_7d], ["Failing now", failed]]
+      .map(([k, v]) => `<div class="metric"><small>${k}</small><b>${v}</b></div>`).join("");
+    $("f2bJails").textContent = d.jails.map((j) => `${j.name} ${j.currently_banned}`).join(" · ");
+    $("f2bList").innerHTML = d.recent.length ? d.recent.slice(0, 25).map((b) => {
+      const left = b.active && b.bantime > 0 ? b.time + b.bantime - nowS : null;
+      const status = b.active ? (b.bantime < 0 ? "Banned forever" : left > 0 ? `Banned · ${dur(left)} left` : "Banned") : "Expired";
+      return `<div class="ban"><code title="${esc(b.ip)}">${esc(b.ip)}</code>
+        <span class="when" title="${new Date(b.time * 1000).toLocaleString()}">${ago(nowS - b.time)}</span>
+        <span class="meta"><span class="jail">${esc(b.jail)}</span>${b.failures ? b.failures + " failures" : ""}${b.count > 1 ? ` · ban #${b.count}` : ""}</span>
+        <span class="st ${b.active ? "on" : "off"}">${status}</span></div>`;
+    }).join("") : `<div class="empty">No bans recorded yet</div>`;
   }
 
   document.addEventListener("click", async (e) => {
@@ -693,6 +761,9 @@
     every(60000, loadStorage);
     every(300000, loadTraffic);
     every(300000, loadPlace);
+    if (store.get("wxMode", "server") === "device") setTimeout(() => deviceWeather(false), 400);
+    every(600000, () => store.get("wxMode", "server") === "device" ? deviceWeather(false) : null);
+    every(60000, loadF2b);
     setInterval(tickClock, 1000);
   }
 })();

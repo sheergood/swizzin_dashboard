@@ -1,0 +1,26 @@
+name: ci
+# The panel restarts on `box update`; this keeps a broken commit from ever getting there.
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-22.04
+    strategy:
+      matrix:
+        python: ["3.8", "3.10", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - run: pip install -r requirements.txt vermin
+      - name: compile
+        run: python -m compileall -q swizzin.py core
+      - name: still runs on Python 3.6+
+        run: vermin --no-tips -t=3.6- --violations swizzin.py core/*.py
+      - name: javascript syntax
+        run: node --check static/js/glass.js
+      - name: smoke test every page and API
+        run: sudo mkdir -p /install && python tests/smoke.py

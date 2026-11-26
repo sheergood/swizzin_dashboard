@@ -52,18 +52,21 @@
     <!-- Server identity: clock, IP, weather -->
     <section class="glass tile id-tile liquid" data-span="4" id="tClock">
       <div class="tile-head"><span class="label">Server time</span><span class="muted" id="tzName"></span></div>
-      <div class="clock"><b id="clockTime">--:--:--</b><span id="clockDate">–</span></div>
+      <button class="clock" id="clockBtn" title="Switch 12 / 24-hour" aria-label="Switch between 12 and 24-hour time"><b><span id="clockTime">--:--:--</span><small id="clockAmPm"></small></b><span id="clockDate">–</span></button>
       <div class="tile-foot"><span id="clockYou">–</span><span id="clockOffset"></span></div>
     </section>
 
     <section class="glass tile id-tile liquid" data-span="4" id="tIp">
       <div class="tile-head"><span class="label">IP address</span><span class="muted" id="ipWhere"></span></div>
-      <div class="ip-main"><code id="ipPublic">–</code><button class="icon-btn copy" data-copy="ipPublic" title="Copy IP" aria-label="Copy public IP">⧉</button></div>
+      <div class="ip-list">
+        <div class="ip-line"><span class="ip-ver">IPv4</span><code id="ip4">–</code><button class="icon-btn copy" data-copy="ip4" title="Copy IPv4" aria-label="Copy IPv4 address">⧉</button></div>
+        <div class="ip-line"><span class="ip-ver">IPv6</span><code id="ip6">–</code><button class="icon-btn copy" data-copy="ip6" title="Copy IPv6" aria-label="Copy IPv6 address">⧉</button></div>
+      </div>
       <div class="ip-rows" id="ipRows"></div>
     </section>
 
     <section class="glass tile id-tile liquid" data-span="4" id="tWx">
-      <div class="tile-head"><span class="label">Weather</span><span class="muted" id="wxPlace"></span></div>
+      <div class="tile-head"><span class="label">Weather</span><span class="wx-where"><span class="muted" id="wxPlace"></span><button class="icon-btn locate" id="wxLocate" title="Use this device's location" aria-label="Use this device's location" aria-pressed="false"><svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="M12 2a7 7 0 0 0-7 7c0 5.2 7 13 7 13s7-7.8 7-13a7 7 0 0 0-7-7zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5z" fill="currentColor"/></svg></button></span></div>
       <div class="wx-main"><span class="wx-icon" id="wxIcon" aria-hidden="true">·</span><div><b id="wxTemp">–</b><span id="wxText">Loading…</span></div></div>
       <div class="tile-foot wx-foot" id="wxFoot"></div>
     </section>
@@ -155,7 +158,7 @@
     </section>
 
     <!-- GPU -->
-    <section class="glass card" data-span="5" id="gpuCard" hidden>
+    <section class="glass card" data-span="12" id="gpuCard" hidden>
       <div class="card-head"><div><h2>Graphics</h2><p class="muted" id="gpuNote">–</p></div></div>
       <div id="gpus"></div>
     </section>
@@ -168,6 +171,14 @@
       <div id="mounts"></div>
       <div class="sub-head" id="sensorsHead" hidden><span>Other sensors</span></div>
       <div class="sensors" id="sensors"></div>
+    </section>
+
+    <!-- fail2ban -->
+    <section class="glass card" data-span="5" id="f2bCard">
+      <div class="card-head"><div><h2>Security</h2><p class="muted" id="f2bNote">fail2ban · loading…</p></div><span class="badge" id="f2bState"></span></div>
+      <div class="f2b-stats" id="f2bStats"></div>
+      <div class="sub-head"><span>Recent bans</span><span class="muted" id="f2bJails"></span></div>
+      <div class="f2b-list" id="f2bList"></div>
     </section>
     {% endif %}
 
@@ -204,6 +215,8 @@
         storage: {{ url_for('api_storage')|tojson }},
         traffic: {{ url_for('api_traffic')|tojson }},
         place: {{ url_for('api_place')|tojson }},
+        weather: {{ url_for('api_weather')|tojson }},
+        fail2ban: {{ url_for('api_fail2ban')|tojson }},
         status: {{ url_for('app_status')|tojson }},
         service: {{ url_for('service')|tojson }},
         quota: {{ url_for('quota_free')|tojson }}

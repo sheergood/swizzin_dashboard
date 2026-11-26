@@ -16,6 +16,14 @@ import subprocess as sp
 import threading
 import time
 
+def _run(cmd, timeout):
+    """stdout of cmd as text ('' on any failure). Python 3.6 compatible."""
+    try:
+        return sp.run(cmd, stdout=sp.PIPE, stderr=sp.DEVNULL, universal_newlines=True, timeout=timeout).stdout or ""
+    except Exception:
+        return ""
+
+
 SMART_DIR = "/var/lib/swizzin/smart"
 
 _lock = threading.Lock()
@@ -176,8 +184,7 @@ def _gpus():
     if shutil.which("nvidia-smi"):
         try:
             q = "name,utilization.gpu,utilization.memory,memory.used,memory.total,temperature.gpu,power.draw,power.limit,fan.speed,clocks.gr,encoder.stats.sessionCount"
-            out = sp.run(["nvidia-smi", "--query-gpu=" + q, "--format=csv,noheader,nounits"],
-                         capture_output=True, text=True, timeout=3).stdout
+            out = _run(["nvidia-smi", "--query-gpu=" + q, "--format=csv,noheader,nounits"], 3)
             for line in out.strip().splitlines():
                 f = [x.strip() for x in line.split(",")]
 
@@ -232,7 +239,7 @@ def _lspci_name(dev):
     if not shutil.which("lspci"):
         return None
     try:
-        out = sp.run(["lspci", "-s", slot, "-mm"], capture_output=True, text=True, timeout=2).stdout
+        out = _run(["lspci", "-s", slot, "-mm"], 2)
         parts = out.split('"')
         return "{} {}".format(parts[3], parts[5]).strip() if len(parts) > 5 else None
     except Exception:
@@ -477,7 +484,7 @@ _traffic_cache = {"t": 0, "data": None}
 
 
 def _vnstat_json(mode):
-    out = sp.run(["vnstat", "--json", mode], capture_output=True, text=True, timeout=10).stdout
+    out = _run(["vnstat", "--json", mode], 10)
     return json.loads(out)
 
 
@@ -569,3 +576,22 @@ def traffic():
     }
     _traffic_cache.update(t=now, data=data)
     return data
+
+
+# --------------------------------------------------------------------------- fail2ban
+
+F2B_FILE = "/var/lib/swizzin/fail2ban.json"
+
+
+def fail2ban():
+    """Recent bans written by the root swizzin-f2b.timer (fail2ban's socket and DB are root-only)."""
+    try:
+        with open(F2B_FILE) as f:
+            data = json.load(f)
+        data["available"] = True
+        data["age"] = round(time.time() - os.path.getmtime(F2B_FILE))
+        return data
+    except FileNotFoundError:
+        return {"available": False, "reason": "collector not installed"}
+    except Exception as e:
+        return {"available": False, "reason": str(e)}

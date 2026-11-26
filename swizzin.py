@@ -212,40 +212,62 @@ def classic(user):
 def _is_admin(user):
     return user == admin_user or not app.config['SHAREDSERVER']
 
+import functools
+
+def _api(fn):
+    """Admin-only JSON endpoint that never takes the panel down: errors come back as JSON."""
+    @functools.wraps(fn)
+    def wrapper(user, *a, **k):
+        if not _is_admin(user):
+            return flask.jsonify({"error": "forbidden"}), 403
+        try:
+            return flask.jsonify(fn(user, *a, **k))
+        except Exception as e:
+            app.logger.exception("panel api %s failed", flask.request.path)
+            return flask.jsonify({"error": "{}: {}".format(type(e).__name__, e)}), 500
+    return wrapper
+
 @app.route('/api/system')
 @htpasswd.required
+@_api
 def api_system(user):
-    if not _is_admin(user):
-        return flask.jsonify({"error": "forbidden"}), 403
-    return flask.jsonify(hw.system())
+    return hw.system()
 
 @app.route('/api/live')
 @htpasswd.required
+@_api
 def api_live(user):
-    if not _is_admin(user):
-        return flask.jsonify({"error": "forbidden"}), 403
-    return flask.jsonify(hw.live())
+    return hw.live()
 
 @app.route('/api/storage')
 @htpasswd.required
+@_api
 def api_storage(user):
-    if not _is_admin(user):
-        return flask.jsonify({"error": "forbidden"}), 403
-    return flask.jsonify({"mounts": hw.mounts_usage(get_mounts()), "drives": hw.drives()})
+    return {"mounts": hw.mounts_usage(get_mounts()), "drives": hw.drives()}
 
 @app.route('/api/place')
 @htpasswd.required
+@_api
 def api_place(user):
-    if not _is_admin(user):
-        return flask.jsonify({"error": "forbidden"}), 403
-    return flask.jsonify(place.place(app.config, hw._default_iface()))
+    return place.place(app.config, hw._default_iface())
+
+@app.route('/api/weather')
+@htpasswd.required
+@_api
+def api_weather(user):
+    return {"weather": place.device_weather(app.config, flask.request.args["lat"], flask.request.args["lon"])}
+
+@app.route('/api/fail2ban')
+@htpasswd.required
+@_api
+def api_fail2ban(user):
+    return hw.fail2ban()
 
 @app.route('/api/traffic')
 @htpasswd.required
+@_api
 def api_traffic(user):
-    if not _is_admin(user):
-        return flask.jsonify({"error": "forbidden"}), 403
-    return flask.jsonify(hw.traffic())
+    return hw.traffic()
 
 @socketio.on('connect', namespace='/websocket')
 def socket_connect():
