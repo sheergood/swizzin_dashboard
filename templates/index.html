@@ -108,6 +108,25 @@
       <div class="kv" id="netTotals"></div>
     </section>
 
+    <!-- Data transferred (vnstat) -->
+    <section class="glass card" data-span="12" id="trafficCard">
+      <div class="card-head">
+        <div><h2>Data transferred</h2><p class="muted" id="trafficNote">Loading vnstat history…</p></div>
+        <div class="seg" role="tablist" aria-label="Last 7 days view">
+          <button role="tab" aria-selected="true" data-view="chart">Chart</button>
+          <button role="tab" aria-selected="false" data-view="table">Table</button>
+        </div>
+      </div>
+      <div class="traffic">
+        <div class="periods" id="periods"></div>
+        <div class="week">
+          <div class="sub-head"><span>Last 7 days</span><span class="legend"><span><i class="dot s2"></i>Upload</span><span><i class="dot s1"></i>Download</span></span></div>
+          <div class="bars" id="bars" role="img" aria-label="Upload and download per day for the last 7 days"></div>
+          <div class="week-table" id="weekTable" hidden></div>
+        </div>
+      </div>
+    </section>
+
     <!-- Drives -->
     <section class="glass card" data-span="12">
       <div class="card-head">
@@ -164,6 +183,7 @@
         live: {{ url_for('api_live')|tojson }},
         system: {{ url_for('api_system')|tojson }},
         storage: {{ url_for('api_storage')|tojson }},
+        traffic: {{ url_for('api_traffic')|tojson }},
         status: {{ url_for('app_status')|tojson }},
         service: {{ url_for('service')|tojson }},
         quota: {{ url_for('quota_free')|tojson }}

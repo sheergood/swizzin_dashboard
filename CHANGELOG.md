@@ -6,6 +6,16 @@ seedbox servers. Format follows [Keep a Changelog](https://keepachangelog.com/en
 ## [Unreleased] — `custom` branch
 
 ### Added
+- **Data transferred card** — upload (▲) and download (▼) with ratio for today, yesterday, this
+  week (Mon–today), last 7 days, this month and all time, plus a 7-day grouped bar chart (hover for
+  exact values) with a table view. Backed by `GET /api/traffic`, which reads vnstat 1.x or 2.x
+  JSON for the default interface and caches it for 60 s.
+- **Drive cards by type** — SSD/NVMe cards lead with wear level (% used, life left, estimated
+  remaining lifetime at the current write rate, average writes per day); HDD cards show a SMART
+  attribute table (raw read errors, reallocated sectors/events, seek errors, spin retries,
+  reported uncorrectable, command timeouts, pending, offline uncorrectable, CRC errors) with
+  OK / Watch / Failing status per attribute and the last self-test result.
+- Sizes and rates now use binary units (KiB, MiB, GiB, TiB), matching vnstat and qBittorrent.
 - **Liquid-glass dashboard** (`templates/index.html`, `static/css/glass.css`, `static/js/glass.js`).
   Frosted, refracting glass panels over an animated ambient light field, with zero CDN dependencies
   (no Bootstrap, jQuery or Socket.IO client needed for the new UI).

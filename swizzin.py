@@ -232,6 +232,13 @@ def api_storage(user):
         return flask.jsonify({"error": "forbidden"}), 403
     return flask.jsonify({"mounts": hw.mounts_usage(get_mounts()), "drives": hw.drives()})
 
+@app.route('/api/traffic')
+@htpasswd.required
+def api_traffic(user):
+    if not _is_admin(user):
+        return flask.jsonify({"error": "forbidden"}), 403
+    return flask.jsonify(hw.traffic())
+
 @socketio.on('connect', namespace='/websocket')
 def socket_connect():
     global thread

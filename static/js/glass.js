@@ -9,7 +9,7 @@
   const LIVE_MS = 2000;
 
   /* ------------------------------------------------------------ formatting */
-  const UNITS = ["B", "KB", "MB", "GB", "TB", "PB"];
+  const UNITS = ["B", "KiB", "MiB", "GiB", "TiB", "PiB"];   // binary units, same as vnstat and qBittorrent
   function bytes(n, dp = 1) {
     if (n == null || isNaN(n)) return "–";
     let i = 0; n = Number(n);
@@ -356,37 +356,71 @@
     return { cls: "good", text: "Healthy", issues };
   }
 
+  const STATE_TXT = { good: "OK", warn: "Watch", crit: "Failing" };
+  const STATE_ICON = { good: "✓", warn: "!", crit: "✕" };
+
+  function ssdWear(dr) {
+    if (dr.wear_used == null) {
+      return `<div class="wear"><div class="wear-top"><span class="label">Wear level</span><b class="muted">Not reported</b></div>
+        <p class="muted">This drive doesn't expose a wear indicator over SMART.</p></div>`;
+    }
+    const used = dr.wear_used, left = Math.max(0, 100 - used), l = lvl(used, 75, 90);
+    let est = "";
+    if (used >= 1 && dr.power_on_hours) {
+      const hrsLeft = (dr.power_on_hours * left) / used;
+      est = ` · about ${hrsLeft >= 8766 ? (hrsLeft / 8766).toFixed(1) + " years" : Math.round(hrsLeft / 24) + " days"} left at this pace`;
+    }
+    const tbw = dr.written != null && dr.power_on_hours ? ` · ${bytes(dr.written / (dr.power_on_hours / 24), 1)}/day written on average` : "";
+    return `<div class="wear">
+      <div class="wear-top"><span class="label">Wear level</span>${l === "good" ? "" : `<span class="badge ${l}">${STATE_ICON[l]} ${l === "warn" ? "Wearing" : "Near end of life"}</span>`}</div>
+      <div class="wear-num"><b>${used}%</b><span>used</span><em>${left}% life left</em></div>
+      <span class="bar wear-bar"><i style="width:${Math.max(used, 0.8)}%;background:${l === "good" ? css("--good") : levelColor(l)}"></i></span>
+      <p class="muted">${dr.written != null ? bytes(dr.written, 1) + " written" : "Writes not reported"}${est}${tbw}</p>
+    </div>`;
+  }
+
+  function hddSmart(dr) {
+    if (!dr.attrs || !dr.attrs.length) return `<div class="empty">No SMART attributes reported</div>`;
+    const key = dr.attrs.filter((a) => [1, 5, 7, 10, 184, 187, 188, 196, 197, 198, 199, 200].includes(a.id));
+    const rest = dr.attrs.filter((a) => !key.includes(a));
+    const row = (a) => `<tr class="${a.state}"><td class="id">${a.id}</td><td>${esc(a.name)}</td><td class="num">${esc(a.raw)}</td>
+      <td class="num muted">${a.value ?? "–"}${a.thresh ? " / " + a.thresh : ""}</td>
+      <td class="st"><span class="s-${a.state}">${STATE_ICON[a.state]} ${STATE_TXT[a.state]}</span></td></tr>`;
+    const st = dr.self_test;
+    return `<div class="smart">
+      <div class="wear-top"><span class="label">SMART attributes</span>
+        ${st ? `<span class="muted">Last self-test: ${esc(st.type || "")} · ${st.passed ? "passed" : esc(st.status || "failed")}${st.hours != null ? " at " + hours(st.hours) : ""}</span>` : ""}</div>
+      <table class="smart-t"><thead><tr><th>ID</th><th>Attribute</th><th class="num">Raw</th><th class="num">Norm / Thr</th><th class="st">Status</th></tr></thead>
+        <tbody>${key.map(row).join("")}</tbody></table>
+      ${rest.length ? `<details><summary>${rest.length} more attributes</summary><table class="smart-t"><tbody>${rest.map(row).join("")}</tbody></table></details>` : ""}
+    </div>`;
+  }
+
   function renderDrives() {
     const box = $("drives");
     const anySmart = drivesCache.some((d) => d.smart);
-    $("smartNote").textContent = anySmart ? "SMART health, wear and live I/O · refreshed by swizzin-smart.timer"
-      : "Live I/O only — install smartmontools and enable swizzin-smart.timer for health and wear";
+    $("smartNote").textContent = anySmart ? "SSDs: wear level · HDDs: SMART attributes · refreshed every 10 min by swizzin-smart.timer"
+      : "Live I/O only — install smartmontools and enable swizzin-smart.timer for wear level and SMART";
     box.innerHTML = drivesCache.map((dr) => {
       const h = driveHealth(dr), hot = dr.kind === "NVMe" ? [70, 80] : dr.kind === "HDD" ? [50, 60] : [60, 70];
       const tl = lvl(dr.temp, hot[0], hot[1]);
-      let life = "";
-      if (dr.wear_used != null) {
-        const left = Math.max(0, 100 - dr.wear_used), l = lvl(dr.wear_used, 75, 90);
-        life = `<div class="life"><div class="life-line"><span class="muted">Endurance left</span><b>${left}%</b></div>
-          <span class="bar"><i style="width:${left}%;background:${l === "good" ? css("--good") : levelColor(l)}"></i></span></div>`;
-      } else if (dr.kind === "HDD" && dr.smart) {
-        life = `<div class="life"><div class="life-line"><span class="muted">Sector health</span><b>${(dr.realloc || 0) + (dr.pending || 0) === 0 ? "No bad sectors" : (dr.realloc || 0) + " realloc · " + (dr.pending || 0) + " pending"}</b></div></div>`;
-      }
-      const metrics = [
+      const isHdd = dr.kind === "HDD";
+      const metrics = isHdd ? [
+        ["Temp", dr.temp != null ? `${dr.temp}°C` : "–", tl && tl !== "good" ? LVL_TEXT[tl] : ""],
+        ["Power-on", hours(dr.power_on_hours)], ["Start/stops", dr.power_cycles ?? "–"],
+      ] : [
         ["Temp", dr.temp != null ? `${dr.temp}°C` : "–", tl && tl !== "good" ? LVL_TEXT[tl] : ""],
         ["Power-on", hours(dr.power_on_hours)],
-        ["Written", dr.written != null ? bytes(dr.written) : "–"],
-        ["Read", dr.read != null ? bytes(dr.read) : "–"],
-        [dr.kind === "NVMe" ? "Spare" : "Cycles", dr.kind === "NVMe" ? pct(dr.spare) : dr.power_cycles ?? "–"],
-        ["Unsafe off", dr.unsafe_shutdowns ?? "–"],
+        [dr.kind === "NVMe" ? "Spare" : "Read", dr.kind === "NVMe" ? pct(dr.spare) : dr.read != null ? bytes(dr.read) : "–"],
       ];
-      return `<article class="drive" data-dev="${esc(dr.name)}">
+      const body = !dr.smart ? "" : isHdd ? hddSmart(dr) : ssdWear(dr);
+      return `<article class="drive${isHdd ? " hdd" : ""}" data-dev="${esc(dr.name)}">
         <div class="drive-top">
           <div class="drive-title"><b><span class="kind">${esc(dr.kind)}</span>${esc(dr.model)}</b>
             <small>/dev/${esc(dr.name)} · ${bytes(dr.capacity, 2)}${dr.rpm ? " · " + dr.rpm + " rpm" : ""}${dr.firmware ? " · fw " + esc(dr.firmware) : ""}</small></div>
           <span class="badge ${h.cls}">${h.text}</span>
         </div>
-        ${life}
+        ${body}
         <div class="metrics">${metrics.map(([k, v, note]) => `<div class="metric"><small>${k}${note ? " · " + note : ""}</small><b>${v}</b></div>`).join("")}</div>
         <div class="io"><span>Read <b data-io="read">–</b></span><span>Write <b data-io="write">–</b></span><span>Busy <b data-io="busy">–</b></span></div>
         ${h.issues && h.issues.length ? `<div class="warnline">⚠ ${esc(h.issues.join(" · "))}</div>` : ""}
@@ -402,6 +436,87 @@
       el.querySelector('[data-io="write"]').textContent = rate(d.write);
       el.querySelector('[data-io="busy"]').textContent = pct(d.busy);
     });
+  }
+
+  /* ============================================================ data transferred */
+  let traffic = null;
+  const DAY = new Intl.DateTimeFormat(undefined, { weekday: "short" });
+  const DATE = new Intl.DateTimeFormat(undefined, { weekday: "long", day: "numeric", month: "short" });
+  const SINCE = new Intl.DateTimeFormat(undefined, { day: "numeric", month: "short", year: "numeric" });
+  const parseDay = (iso) => { const [y, m, d] = iso.split("-").map(Number); return new Date(y, m - 1, d); };
+  const ratio = (t) => (t.rx ? (t.tx / t.rx).toFixed(2) : "–");
+
+  async function loadTraffic() {
+    const t = await getJSON(S.api.traffic);
+    traffic = t;
+    if (!t.available) {
+      $("trafficNote").textContent = t.reason || "vnstat unavailable";
+      $("periods").innerHTML = `<div class="empty" style="grid-column:1/-1">No traffic history yet — vnstat collects it every 5 minutes once it's running (<code>systemctl enable --now vnstat</code>).</div>`;
+      $("bars").innerHTML = ""; return;
+    }
+    $("trafficNote").textContent = `${t.iface} · counted by vnstat${t.since ? " since " + SINCE.format(parseDay(t.since)) : ""}`;
+    const periods = [
+      ["Today", t.today, true], ["Yesterday", t.yesterday], ["This week", t.week],
+      ["Last 7 days", t.last7], ["This month", t.month], ["All time", t.all, true],
+    ];
+    $("periods").innerHTML = periods.map(([label, v, hl]) => `
+      <div class="period${hl ? " hl" : ""}">
+        <div class="p-label">${label}</div>
+        <div class="p-up"><span class="arrow" aria-label="Uploaded">▲</span><b>${bytes(v.tx, 2)}</b></div>
+        <div class="p-sub"><span>▼ <b>${bytes(v.rx, 2)}</b></span><span>ratio <b>${ratio(v)}</b></span></div>
+      </div>`).join("");
+    renderBars(t.days);
+    renderWeekTable(t.days, t.last7);
+  }
+
+  function niceMax(m) {
+    if (m <= 0) return 1;
+    const p = Math.pow(1024, Math.floor(Math.log(m) / Math.log(1024)));
+    for (const s of [1, 2, 4, 8, 10, 20, 40, 80, 100, 200, 400, 800, 1000]) if (s * p >= m * 1.08) return s * p;
+    return m * 1.2;
+  }
+
+  function renderBars(days) {
+    const max = niceMax(Math.max(...days.map((d) => Math.max(d.tx, d.rx))));
+    const best = days.reduce((a, d, i) => (d.tx > days[a].tx ? i : a), 0);
+    let html = "";
+    for (let k = 0; k <= 4; k++) {
+      html += `<div class="gl${k ? "" : " base"}" style="bottom:${24 + (186 * k) / 4}px"><span>${k ? bytes((max * k) / 4, 0) : "0"}</span></div>`;
+    }
+    html += `<div class="cols">` + days.map((d, i) => {
+      const up = (d.tx / max) * 100, down = (d.rx / max) * 100;
+      const isToday = i === days.length - 1;
+      // direct label only on the busiest upload day and today, never on every bar
+      const label = (i === best || isToday) && d.tx > 0 ? `<span class="vl" style="bottom:calc(${up}% + 6px)">${bytes(d.tx, 1)}</span>` : "";
+      return `<div class="col${isToday ? " today" : ""}" data-i="${i}">
+        ${label}<i class="up" style="height:${up}%"></i><i class="down" style="height:${down}%"></i>
+        <span class="xl">${isToday ? "Today" : DAY.format(parseDay(d.date))}</span></div>`;
+    }).join("") + `</div>`;
+    $("bars").innerHTML = html;
+  }
+
+  function renderWeekTable(days, sum) {
+    const row = (name, d) => `<tr><td>${name}</td><td>${bytes(d.tx, 2)}</td><td>${bytes(d.rx, 2)}</td><td>${bytes(d.tx + d.rx, 2)}</td><td>${ratio(d)}</td></tr>`;
+    $("weekTable").innerHTML = `<table><thead><tr><th>Day</th><th>Upload</th><th>Download</th><th>Total</th><th>Ratio</th></tr></thead>
+      <tbody>${days.slice().reverse().map((d, i) => row(i === 0 ? "Today" : DATE.format(parseDay(d.date)), d)).join("")}</tbody>
+      <tfoot>${row("7-day total", sum)}</tfoot></table>`;
+  }
+
+  if (S.admin) {
+    $("bars").addEventListener("pointermove", (e) => {
+      const col = e.target.closest(".col"); if (!col || !traffic) return hideTip();
+      const d = traffic.days[+col.dataset.i];
+      showTip(`<div class="t-title">${DATE.format(parseDay(d.date))}</div>
+        <div class="t-row"><span><i class="dot s2"></i>Upload</span><b>${bytes(d.tx, 2)}</b></div>
+        <div class="t-row"><span><i class="dot s1"></i>Download</span><b>${bytes(d.rx, 2)}</b></div>
+        <div class="t-row"><span>Ratio</span><b>${ratio(d)}</b></div>`, e.clientX, e.clientY);
+    });
+    $("bars").addEventListener("pointerleave", hideTip);
+    document.querySelectorAll("#trafficCard .seg button").forEach((b) => b.addEventListener("click", () => {
+      document.querySelectorAll("#trafficCard .seg button").forEach((x) => x.setAttribute("aria-selected", String(x === b)));
+      const table = b.dataset.view === "table";
+      $("bars").hidden = table; $("weekTable").hidden = !table;
+    }));
   }
 
   /* ============================================================ apps */
@@ -485,5 +600,6 @@
     loadSystem().catch(console.warn);
     every(LIVE_MS, async () => renderLive(await getJSON(S.api.live)));
     every(60000, loadStorage);
+    every(300000, loadTraffic);
   }
 })();

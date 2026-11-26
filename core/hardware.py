@@ -389,6 +389,38 @@ def _parse_smart(name, j):
         d["read"] = lbr * lb
     d.update(realloc=raw(5), pending=raw(197), uncorrectable=raw(198), crc=raw(199),
              unsafe_shutdowns=raw(192, 174))
+    # Attributes that predict HDD failure (Backblaze / smartmontools guidance), in display order.
+    watch = {1: "count-vendor", 3: "info", 4: "info", 5: "bad", 7: "count-vendor", 9: "info", 10: "bad",
+             12: "info", 184: "bad", 187: "bad", 188: "bad", 190: "info", 194: "info", 196: "bad",
+             197: "bad", 198: "bad", 199: "bad", 200: "bad"}
+    attrs = []
+    for a in table:
+        aid = a.get("id")
+        if aid not in watch:
+            continue
+        rawv = (a.get("raw") or {}).get("value")
+        raws = (a.get("raw") or {}).get("string") or ("" if rawv is None else str(rawv))
+        val, thr = a.get("value"), a.get("thresh")
+        failed = bool(a.get("when_failed")) or (thr not in (None, 0) and val is not None and val <= thr)
+        if failed:
+            state = "crit"
+        elif watch[aid] == "bad" and rawv:
+            state = "warn"
+        else:
+            state = "good"
+        attrs.append({"id": aid, "name": (a.get("name") or "").replace("_", " "), "value": val,
+                      "worst": a.get("worst"), "thresh": thr, "raw": raws.split(" ")[0],
+                      "prefail": bool((a.get("flags") or {}).get("prefailure")), "state": state})
+    order = list(watch)
+    d["attrs"] = sorted(attrs, key=lambda x: order.index(x["id"]))
+    d["self_test"] = None
+    log = (j.get("ata_smart_self_test_log") or {}).get("standard", {}).get("table") or []
+    if log:
+        t0 = log[0]
+        d["self_test"] = {"type": (t0.get("type") or {}).get("string"),
+                          "passed": (t0.get("status") or {}).get("passed"),
+                          "status": (t0.get("status") or {}).get("string"),
+                          "hours": t0.get("lifetime_hours")}
     return d
 
 
@@ -437,3 +469,103 @@ def system():
     info["link_speed"] = _read_int("/sys/class/net/{}/speed".format(iface)) if iface else None
     info["boot"] = time.time() - float((_read("/proc/uptime", "0") or "0").split()[0])
     return info
+
+
+# --------------------------------------------------------------------------- traffic (vnstat)
+
+_traffic_cache = {"t": 0, "data": None}
+
+
+def _vnstat_json(mode):
+    out = sp.run(["vnstat", "--json", mode], capture_output=True, text=True, timeout=10).stdout
+    return json.loads(out)
+
+
+def traffic():
+    """Upload/download totals per day, week, month and all time from vnstat's database."""
+    now = time.time()
+    if _traffic_cache["data"] and now - _traffic_cache["t"] < 60:
+        return _traffic_cache["data"]
+    if not shutil.which("vnstat"):
+        return {"available": False, "reason": "vnstat is not installed"}
+    try:
+        dj = _vnstat_json("d")
+        mj = _vnstat_json("m")
+    except Exception as e:
+        return {"available": False, "reason": "vnstat failed: {}".format(e)}
+
+    v2 = str(dj.get("jsonversion", "1")) == "2"
+    mult = 1 if v2 else 1024  # vnstat 1.x reports KiB
+    want = _default_iface()
+
+    def pick(j):
+        ifs = j.get("interfaces") or []
+        for i in ifs:
+            if i.get("name") == want or i.get("id") == want:
+                return i
+        return ifs[0] if ifs else None
+
+    di, mi = pick(dj), pick(mj)
+    if not di:
+        return {"available": False, "reason": "vnstat has no interfaces yet"}
+    t = di.get("traffic", {})
+    days_raw = t.get("day" if v2 else "days") or []
+    months_raw = (mi or {}).get("traffic", {}).get("month" if v2 else "months") or []
+
+    import datetime as dt
+    days = {}
+    for d in days_raw:
+        dd = d.get("date", {})
+        try:
+            key = dt.date(dd["year"], dd["month"], dd["day"])
+        except Exception:
+            continue
+        days[key] = (d.get("rx", 0) * mult, d.get("tx", 0) * mult)
+    months = {}
+    for m in months_raw:
+        md = m.get("date", {})
+        if "year" in md and "month" in md:
+            months[(md["year"], md["month"])] = (m.get("rx", 0) * mult, m.get("tx", 0) * mult)
+
+    today = dt.date.today()
+
+    def total(keys):
+        rx = sum(days.get(k, (0, 0))[0] for k in keys)
+        tx = sum(days.get(k, (0, 0))[1] for k in keys)
+        return {"rx": rx, "tx": tx}
+
+    week_start = today - dt.timedelta(days=today.weekday())  # Monday
+    last7 = []
+    for i in range(6, -1, -1):
+        d = today - dt.timedelta(days=i)
+        rx, tx = days.get(d, (0, 0))
+        last7.append({"date": d.isoformat(), "rx": rx, "tx": tx})
+    month = months.get((today.year, today.month))
+    if month is None:
+        month = (sum(v[0] for k, v in days.items() if k.year == today.year and k.month == today.month),
+                 sum(v[1] for k, v in days.items() if k.year == today.year and k.month == today.month))
+    pm = (today.replace(day=1) - dt.timedelta(days=1))
+    prev_month = months.get((pm.year, pm.month), (0, 0))
+    tot = t.get("total", {})
+    created = di.get("created", {}).get("date") if v2 else di.get("created", {}).get("date")
+    since = None
+    if created and "year" in created:
+        since = "{:04d}-{:02d}-{:02d}".format(created["year"], created.get("month", 1), created.get("day", 1))
+
+    data = {
+        "available": True,
+        "iface": di.get("name") or di.get("id"),
+        "since": since,
+        "today": total([today]),
+        "yesterday": total([today - dt.timedelta(days=1)]),
+        "week": total([week_start + dt.timedelta(days=i) for i in range((today - week_start).days + 1)]),
+        "last7": {"rx": sum(d["rx"] for d in last7), "tx": sum(d["tx"] for d in last7)},
+        "month": {"rx": month[0], "tx": month[1]},
+        "prev_month": {"rx": prev_month[0], "tx": prev_month[1]},
+        "all": {"rx": tot.get("rx", 0) * mult, "tx": tot.get("tx", 0) * mult},
+        "days": last7,
+        "months": [{"month": "{:04d}-{:02d}".format(y, m), "rx": v[0], "tx": v[1]}
+                   for (y, m), v in sorted(months.items())[-12:]],
+    }
+    _traffic_cache.update(t=now, data=data)
+    return data
