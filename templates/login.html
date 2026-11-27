@@ -185,7 +185,9 @@
         x.open("GET", url, true, u, p);        // browser caches the Basic credentials on success
         x.onload = function () {
           btn.disabled = false;
-          if (x.status === 200) location.href = url;
+          // ?next=/fbquantum/ etc: go back to the app that sent you here (same site only)
+          var nx = new URLSearchParams(location.search).get("next");
+          if (x.status === 200) location.href = nx && /^\/(?![\/\\])/.test(nx) ? nx : url;
           else if (x.status === 429) err.textContent = "Too many attempts — try again in a minute.";
           else err.textContent = "Incorrect username or password.";
         };

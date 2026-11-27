@@ -35,4 +35,15 @@ for path, needs_auth in [("/login", False), ("/", True), ("/classic", True), ("/
 r = client.get("/api/system")
 print("{:4} /api/system without auth (expect 401/302)".format(r.status_code))
 bad += r.status_code not in (401, 302)
+# single sign-on endpoint used by nginx auth_request (FileBrowser Quantum)
+wrong = {"Authorization": "Basic " + base64.b64encode(b"smoke:nope").decode()}
+checks = [("no login", client.get("/auth/check").status_code, 401),
+          ("wrong password", client.get("/auth/check", headers=wrong).status_code, 401),
+          ("right login", client.get("/auth/check", headers=auth).status_code, 200),
+          ("right login, other required user", client.get("/auth/check", headers=dict(auth, **{"X-Swizzin-Require-User": "someoneelse"})).status_code, 403)]
+r = client.get("/auth/check", headers=dict(auth, **{"X-Swizzin-Require-User": "smoke"}))
+checks.append(("user header", r.headers.get("X-Swizzin-User"), "smoke"))
+for name, got, want in checks:
+    print("{:4} /auth/check {} (expect {})".format(got, name, want))
+    bad += got != want
 sys.exit(1 if bad else 0)

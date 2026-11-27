@@ -493,6 +493,47 @@ def network_quota(user):
     return flask.jsonify({"nettotal": total, "netused": used, "netfree": free, "perutil": usage})
 
 
+_auth_cache = {}
+
+@app.route('/auth/check')
+def auth_check():
+    """Single sign-on for apps behind nginx (FileBrowser Quantum): nginx asks here, with
+    auth_request, whether the browser's saved swizzin login is valid. 200 + X-Swizzin-User when it
+    is, 401 when it isn't (nginx then redirects to the login page instead of a browser popup).
+    nginx names the one user the app belongs to in X-Swizzin-Require-User; anyone else gets 403.
+    Answers are cached for 5 minutes per login and htpasswd version, because apps call this for
+    every file and thumbnail and htpasswd hashes are deliberately slow."""
+    a = flask.request.authorization
+    if not a or not a.username or not a.password:
+        return flask.Response("", 401)
+    try:
+        stamp = os.stat(app.config['FLASK_HTPASSWD_PATH']).st_mtime
+    except OSError:
+        stamp = 0
+    import hashlib
+    key = hashlib.sha256("{}\0{}\0{}".format(a.username, a.password, stamp).encode()).hexdigest()
+    now = time.time()
+    hit = _auth_cache.get(key)
+    if hit and now - hit[1] < 300:
+        ok = hit[0]
+    else:
+        ok, _ = htpasswd.check_basic_auth(a.username, a.password)
+        if len(_auth_cache) > 512:
+            _auth_cache.clear()
+        _auth_cache[key] = (ok, now)
+    if not ok:
+        return flask.Response("", 401)
+    required = flask.request.headers.get('X-Swizzin-Require-User')
+    if required and a.username != required:
+        return flask.Response("", 403)
+    r = flask.Response("", 200)
+    r.headers['X-Swizzin-User'] = a.username
+    r.headers['Cache-Control'] = 'no-store'
+    return r
+
+if app.config['RATELIMIT_ENABLED'] == True:
+    limiter.exempt(auth_check)   # nginx calls it for every request of the app; it never says why a login failed
+
 @app.route('/login')
 def login():
     return flask.render_template('login.html', title='swizzin login')

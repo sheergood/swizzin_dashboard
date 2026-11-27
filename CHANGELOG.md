@@ -3,6 +3,15 @@
 Fork of [liaralabs/swizzin_dashboard](https://github.com/liaralabs/swizzin_dashboard), tuned for
 seedbox servers. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [sheergood-6] — Nov 27 2026
+
+### Added
+- `/auth/check`: single sign-on for apps behind nginx. nginx (auth_request) asks the panel whether the
+  browser's saved swizzin login is valid — the same check the dashboard makes — so FileBrowser
+  Quantum accepts you exactly when the dashboard does. Restricted to the user nginx names
+  (`X-Swizzin-Require-User`); answers cached 5 min per login and htpasswd change (~2 ms per request).
+- The login page returns you to where you came from (`/login?next=/fbquantum/`, same site only).
+
 ## [sheergood-5] — Nov 27 2026
 
 ### Fixed
