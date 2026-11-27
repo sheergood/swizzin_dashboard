@@ -256,9 +256,6 @@ class Collectors(unittest.TestCase):
         self.assertTrue(place._is_public("51.38.71.204"))
 
 
-if __name__ == "__main__":
-    unittest.main(verbosity=2)
-
 
 # ----------------------------------------------------------------------------- integrated GPU (fake sysfs)
 class IGpu(unittest.TestCase):
@@ -434,3 +431,131 @@ class Specs(unittest.TestCase):
             d = specs.specs({"SERVER_BANDWIDTH": "1Gbit/s unmetered and guaranteed"})
         self.assertIsNone(d["storage"]); self.assertEqual(d["bandwidth_note"], "1Gbit/s unmetered and guaranteed")
         self.assertTrue(d["hostname"])
+
+
+# ----------------------------------------------------------------------------- speed test (fake M-Lab)
+class SpeedTest(unittest.TestCase):
+    """Runs the real ndt7 client against tests/tools/fake_ndt7.py on localhost (plain ws, 1 s each way)."""
+
+    @classmethod
+    def setUpClass(cls):
+        import socket
+        import subprocess
+        here = os.path.dirname(os.path.abspath(__file__))
+        with socket.socket() as s:
+            s.bind(("127.0.0.1", 0))
+            cls.port = s.getsockname()[1]
+        env = dict(os.environ, FAKE_NDT7_MBPS="80", FAKE_NDT7_SECONDS="1")
+        cls.srv = subprocess.Popen([sys.executable, os.path.join(here, "tools", "fake_ndt7.py"), str(cls.port)],
+                                   stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, env=env, universal_newlines=True)
+        cls.srv.stdout.readline()
+        cls.env = {"NDT7_LOCATE": "http://127.0.0.1:{}/v2/nearest/ndt/ndt7".format(cls.port), "NDT7_DURATION": "1",
+                   "no_proxy": "*", "NO_PROXY": "*"}
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.srv.kill()
+        cls.srv.wait()
+        cls.srv.stdout.close()
+
+    def run_client(self, **extra):
+        import subprocess
+        script = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "core", "ndt7.py")
+        out = subprocess.run([sys.executable, script], stdout=subprocess.PIPE, timeout=60, universal_newlines=True,
+                             env=dict(os.environ, **dict(self.env, **extra)))
+        return out.returncode, [json.loads(l) for l in out.stdout.splitlines()]
+
+    def test_full_run(self):
+        code, lines = self.run_client()
+        self.assertEqual(code, 0)
+        final = lines[-1]
+        self.assertTrue(final["done"])
+        self.assertGreater(final["download"], 40)          # server paces at 80 Mbit/s
+        self.assertLess(final["download"], 100)
+        self.assertGreater(final["upload"], 1)
+        self.assertEqual(final["upload_measured_by"], "server")
+        self.assertEqual(final["latency_ms"], 4.2)
+        self.assertEqual(final["server"]["city"], "Amsterdam")
+        self.assertEqual([l["phase"] for l in lines if "phase" in l][0], "locate")
+
+    def test_unreachable_is_a_message(self):
+        code, lines = self.run_client(NDT7_LOCATE="http://127.0.0.1:9/v2/nearest/ndt/ndt7")
+        self.assertEqual(code, 1)
+        self.assertIn("couldn't reach the M-Lab locate service", lines[-1]["error"])
+
+    def test_cooldown_and_single_run(self):
+        import core.speedtest as st
+        with tempfile.TemporaryDirectory() as d:
+            cfg = {"SPEEDTEST_FILE": os.path.join(d, "s.json"), "NDT7_ENV": self.env}
+            with mock.patch.object(st.threading, "Thread") as T:   # don't really run; check the guard
+                ok, _ = st.start(cfg)
+                self.assertTrue(ok)
+                ok, msg = st.start(cfg)
+                self.assertFalse(ok)
+                self.assertIn("already running", msg)
+            st._run(cfg)                                          # the real run, in this thread
+            s = st.status(cfg)
+            self.assertFalse(s["running"])
+            self.assertIsNone(s["error"])
+            self.assertGreater(s["last"]["download"], 40)
+            self.assertGreater(s["cooldown"], 590)
+            ok, msg = st.start(cfg)
+            self.assertFalse(ok)
+            self.assertIn("wait", msg)
+            with open(cfg["SPEEDTEST_FILE"], "w") as f:
+                f.write("{broken")
+            self.assertIsNone(st.status(cfg)["last"])               # a damaged file never breaks the panel
+
+
+# ----------------------------------------------------------------------------- per-core temperatures (fake sysfs)
+class CoreTemps(unittest.TestCase):
+    def setUp(self):
+        self.d = tempfile.mkdtemp()
+        hw_ = os.path.join(self.d, "hwmon", "hwmon3")
+        os.makedirs(hw_)
+        files = {"name": "coretemp", "temp1_label": "Package id 0", "temp1_input": "41000",
+                 "temp2_label": "Core 0", "temp2_input": "38000", "temp2_max": "85000",
+                 "temp3_label": "Core 1", "temp3_input": "44000", "temp3_max": "85000",
+                 "temp10_label": "Core 8", "temp10_input": "36000"}   # core_id numbering can have gaps
+        for k, v in files.items():
+            with open(os.path.join(hw_, k), "w") as f:
+                f.write(v + "\n")
+        for cpu, core in enumerate([0, 1, 8, 0, 1, 8]):                # siblings far apart, as Linux numbers them
+            t = os.path.join(self.d, "cpu", "cpu%d" % cpu, "topology")
+            os.makedirs(t)
+            for k, v in (("physical_package_id", "0"), ("core_id", str(core))):
+                with open(os.path.join(t, k), "w") as f:
+                    f.write(v + "\n")
+        self.p = [mock.patch.object(hw, "HWMON", os.path.join(self.d, "hwmon")),
+                  mock.patch.object(hw, "CPU_SYS", os.path.join(self.d, "cpu")),
+                  mock.patch.dict(hw._topology, clear=True)]
+        for p in self.p:
+            p.start()
+
+    def tearDown(self):
+        for p in self.p:
+            p.stop()
+        import shutil
+        shutil.rmtree(self.d)
+
+    def test_threads_follow_topology(self):
+        pkg, cores, by_core, _ = hw._temps()
+        self.assertEqual(pkg, 41.0)
+        self.assertEqual(sorted(cores), [36.0, 38.0, 44.0])
+        tt = hw._thread_temps(6, by_core)
+        self.assertEqual([t["c"] for t in tt], [38.0, 44.0, 36.0, 38.0, 44.0, 36.0])
+        self.assertEqual(tt[0]["high"], 85.0)
+        self.assertIsNone(tt[2]["high"])
+
+    def test_no_sensors_means_no_temps(self):
+        self.assertEqual(hw._thread_temps(6, {}), [])
+
+    def test_missing_topology_is_none_not_a_crash(self):
+        _, _, by_core, _ = hw._temps()
+        tt = hw._thread_temps(8, by_core)                          # cpu6/cpu7 don't exist here
+        self.assertIsNone(tt[6])
+        self.assertIsNone(tt[7])
+
+
+if __name__ == "__main__":
+    unittest.main(verbosity=2)

@@ -337,6 +337,10 @@ html[data-side="mini"] .side-item, html[data-side="mini"] .side-toggle { justify
 .core-id, .core-v { position: absolute; top: 5px; z-index: 1; font-size: 11px; }
 .core-id { left: 8px; color: var(--ink-2); font-weight: 600; font-family: var(--mono); }
 .core-v { right: 8px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.core-t { margin-left: 7px; font-weight: 600; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.core-t:empty { display: none; }
+.core-t.warn { color: var(--warn); }
+.core-t.crit { color: var(--crit); }
 .core-g { position: absolute; inset: 14px 0 0 0; width: 100%; height: calc(100% - 14px); }
 .core-a { fill: rgba(51,140,237,.28); }
 .core-l { fill: none; stroke: var(--s1); stroke-width: 1.6; vector-effect: non-scaling-stroke; stroke-linejoin: round; }
@@ -483,7 +487,12 @@ html[data-side="mini"] .side-item, html[data-side="mini"] .side-toggle { justify
   .drive-row .dr-busy, .drive-row .dr-io { display: none; }
 }
 @media (max-width: 640px) { .disk-totals { display: none; } }
-.pop-wide { width: min(560px, calc(100vw - 24px)); max-height: min(70vh, 640px); overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; }
+/* Wide popovers scroll an inner box, never the popover itself: the glass rim and sheen are absolutely
+   positioned pseudo-elements, and they would scroll away with the content (and spill past the rounded
+   corners) if the popover were the scroll container. */
+.pop-wide { width: min(560px, calc(100vw - 24px)); max-height: min(70vh, 640px); }
+.pop-scroll { flex: 1 1 auto; min-height: 0; overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain;
+  margin-right: -10px; padding-right: 10px; display: flex; flex-direction: column; gap: 10px; }
 .pop .metrics { grid-template-columns: repeat(3, 1fr); }
 
 /* drives */
@@ -747,6 +756,22 @@ html[data-theme="light"] .glass-logo svg { filter: drop-shadow(0 1px 0 rgba(255,
 .spec > b { font-weight: 600; overflow-wrap: anywhere; }
 .spec small { display: block; font-weight: 400; color: var(--ink-3); font-size: 11.5px; margin-top: 1px; }
 @media (max-width: 520px) { .spec { grid-template-columns: 1fr; gap: 2px; } }
+/* speed test row */
+.st { display: flex; flex-direction: column; gap: 4px; }
+.st-res { display: flex; flex-wrap: wrap; gap: 4px 14px; font-variant-numeric: tabular-nums; }
+.st-run { font-weight: 600; }
+.st-live { font-variant-numeric: tabular-nums; color: var(--ink); margin-left: 4px; }
+.st-steps { display: flex; gap: 4px; width: 120px; }
+.st-steps i { flex: 1; height: 4px; border-radius: 4px; background: rgba(var(--hl), .14); }
+.st-steps i.on, .st-steps i.now { background: var(--s1); }
+.st-steps i.now { animation: st-pulse 1.4s ease-in-out infinite; }
+@keyframes st-pulse { 50% { opacity: .45; } }
+@media (prefers-reduced-motion: reduce) { .st-steps i.now { animation: none; } }
+.st-act { display: flex; align-items: center; gap: 10px; margin-top: 2px; }
+.st-act small { margin: 0; }
+.st .pill[disabled] { opacity: .5; cursor: default; }
+.spec .st-err { color: var(--crit); }
+.spec .st-note { max-width: 46ch; }
 
 /* ---------------------------------------------------------------- Plex: now playing */
 .plex-tag { font-size: 12px; font-weight: 600; margin-left: 6px; padding: 1px 8px; border-radius: 999px; background: rgba(229,160,13,.16); color: #e5a00d; vertical-align: 2px; }

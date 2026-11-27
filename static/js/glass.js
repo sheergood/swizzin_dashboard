@@ -268,9 +268,9 @@
     ].map(([v, k]) => `<div class="stat"><b>${v}</b><small>${k}</small></div>`).join("");
     const coresEl = $("cores");
     if (coresEl.children.length !== c.cores.length) {
-      coresEl.innerHTML = c.cores.map((_, i) => `<div class="core" data-i="${i}"><span class="core-id">C${i}</span><b class="core-v">–</b><svg class="core-g" viewBox="0 0 ${CORE_HIST - 1} 100" preserveAspectRatio="none" aria-hidden="true"><path class="core-a"/><path class="core-l"/></svg></div>`).join("");
+      coresEl.innerHTML = c.cores.map((_, i) => `<div class="core" data-i="${i}"><span class="core-id">C${i}<span class="core-t"></span></span><b class="core-v">–</b><svg class="core-g" viewBox="0 0 ${CORE_HIST - 1} 100" preserveAspectRatio="none" aria-hidden="true"><path class="core-a"/><path class="core-l"/></svg></div>`).join("");
     }
-    const perPhys = c.core_temps.length && c.cores.length ? c.cores.length / c.core_temps.length : 0;
+    const tt = c.thread_temps || [];   // temperature of the physical core under each logical CPU
     c.cores.forEach((v, i) => {
       const h = coreHist[i] || (coreHist[i] = []);
       h.push(v == null ? 0 : v); if (h.length > CORE_HIST) h.shift();
@@ -279,7 +279,16 @@
       el.querySelector(".core-l").setAttribute("d", "M" + pts);
       el.querySelector(".core-a").setAttribute("d", `M${off},100 L${pts} L${CORE_HIST - 1},100 Z`);
       el.querySelector(".core-v").textContent = v == null ? "–" : Math.round(v) + "%";
-      el.dataset.v = v; el.dataset.t = perPhys ? c.core_temps[Math.floor(i / perPhys)] ?? "" : "";
+      const t = tt[i], te = el.querySelector(".core-t");
+      el.dataset.t = t ? t.c : "";
+      el.dataset.v = v;
+      if (te) {
+        te.textContent = t ? Math.round(t.c) + "°" : "";
+        // the CPU's own "high" mark when it reports one (Intel coretemp: tempN_max), else 80/90 °C
+        const hi = t && t.high ? t.high : 90, warn = hi - 10;
+        te.className = "core-t" + (!t ? "" : t.c >= hi ? " crit" : t.c >= warn ? " warn" : "");
+        te.title = t ? `Core temperature ${t.c}°C` + (t.high ? ` (high at ${Math.round(t.high)}°C)` : "") : "";
+      }
       el.classList.toggle("hot", v >= 90); el.classList.toggle("busy", v >= 60 && v < 90);
     });
     $("coreTempsLine").textContent = c.core_temps.length ? `core temps ${Math.min(...c.core_temps)}–${Math.max(...c.core_temps)}°C` : "";
@@ -698,8 +707,8 @@
       const pop = $(btn.dataset.pop), same = openPop && openPop.pop === pop;
       closePop();
       if (!same) {
-        if (btn.dataset.drive != null) { pop.innerHTML = driveDetail(drivesCache[+btn.dataset.drive]); if (lastLive) renderDriveIO(lastLive.disk_io); }
-        if (btn.dataset.pop === "popSpecs") loadSpecs();
+        if (btn.dataset.drive != null) { pop.innerHTML = `<div class="pop-scroll">${driveDetail(drivesCache[+btn.dataset.drive])}</div>`; if (lastLive) renderDriveIO(lastLive.disk_io); }
+        if (btn.dataset.pop === "popSpecs") { loadSpecs(); loadSpeed(); }
         pop.hidden = false; placePop(pop, btn.closest(".sb") || btn); btn.setAttribute("aria-expanded", "true"); openPop = { pop, btn };
       }
       return;
@@ -748,10 +757,89 @@
     const def = nics.find((n) => n.default) || nics[0];
     if (d.bandwidth_note || (def && def.speed)) add("Public bandwidth", esc(d.bandwidth_note || `${gbit(def.speed)} port`) +
       (!d.bandwidth_note ? ` <small>set SERVER_BANDWIDTH in swizzin.cfg to describe your plan</small>` : ""), d.bandwidth_note || `${gbit(def.speed)} port`);
+    portMbps = def && def.speed > 0 ? def.speed : null;
+    add("Speed test", `<span id="speedtest" class="st">${speedHTML()}</span>`, "@speedtest");
     for (const g of d.graphics || []) add(g.integrated ? "iGPU" : "GPU", esc(g.name) + ` <small>${esc(g.state + (g.driver ? " · " + g.driver : ""))}</small>`, `${g.name} (${g.state})`);
     $("specs").innerHTML = rows.map(([k, v]) => `<div class="spec"><span>${esc(k)}</span><b>${v}</b></div>`).join("");
-    specsText = rows.map(([k, , t]) => `${k} - ${t}`).join("\n");
+    specsRows = rows.map(([k, , t]) => [k, t]);
+    buildSpecsText();
   }
+
+  /* ------------------------------------------------------------ speed test (M-Lab ndt7)
+     The test runs on the server (core/ndt7.py), never in the viewer's browser, so it measures the
+     server's own line to the nearest M-Lab site. It only starts when the admin presses the button. */
+  let speed = null, speedTimer = null, specsRows = [], portMbps = null;
+  const mbit = (v) => (v == null ? "–" : v >= 1000 ? (v / 1000).toFixed(2) + " Gbit/s" : (v >= 100 ? Math.round(v) : v.toFixed(1)) + " Mbit/s");
+  const PHASE = { locate: "Finding the nearest M-Lab server…", download: "Testing download", upload: "Testing upload" };
+  function speedPlain(r) {
+    if (!r) return "not run yet";
+    const where = r.server && [r.server.city, r.server.country].filter(Boolean).join(", ");
+    return `↓ ${mbit(r.download)} / ↑ ${mbit(r.upload)}` + (r.latency_ms != null ? ` · ${r.latency_ms} ms ping` : "") +
+      ` (M-Lab${where ? " " + where : ""}, ${new Date(r.at * 1000).toLocaleString()})`;
+  }
+  function buildSpecsText() {
+    specsText = specsRows.map(([k, t]) => `${k} - ${t === "@speedtest" ? speedPlain(speed && speed.last) : t}`).join("\n");
+  }
+  function speedHTML() {
+    const st = speed, last = st && st.last;
+    const where = last && last.server && [last.server.city, last.server.country].filter(Boolean).join(", ");
+    let h = "";
+    if (st && st.running) {
+      const live = st.phase !== "locate" && st.mbps != null ? ` <span class="st-live">${esc(mbit(st.mbps))}</span>` : "";
+      const step = st.phase === "upload" ? 2 : st.phase === "download" ? 1 : 0;
+      h += `<span class="st-run" role="status">${esc(PHASE[st.phase] || "Starting…")}${live}</span>
+        <span class="st-steps" aria-hidden="true"><i class="${step === 1 ? "now" : step > 1 ? "on" : ""}"></i><i class="${step === 2 ? "now" : ""}"></i></span>`;
+      if (st.server && st.server.city) h += `<small>M-Lab ${esc([st.server.city, st.server.country].filter(Boolean).join(", "))}</small>`;
+    } else if (last) {
+      h += `<span class="st-res"><span title="Download">↓ ${esc(mbit(last.download))}</span><span title="Upload">↑ ${esc(mbit(last.upload))}</span>` +
+        (last.latency_ms != null ? `<span title="Lowest round-trip time to the M-Lab server">${esc(last.latency_ms)} ms ping</span>` : "") + `</span>
+        <small>M-Lab${where ? " " + esc(where) : ""} · ${esc(ago(Math.max(0, Date.now() / 1000 - last.at)))}` +
+        (portMbps && last.download ? ` · ${Math.round(Math.min(last.download, portMbps) / portMbps * 100)}% of the port` : "") + `</small>`;
+    } else if (st) h += `<span class="muted">Not run yet</span>`;
+    else h += `<span class="muted">…</span>`;
+    if (st && st.error && !st.running) h += `<small class="st-err">${esc(st.error)}</small>`;
+    if (st && !st.running) {
+      const wait = st.cooldown > 0;
+      h += `<span class="st-act"><button class="pill pop-mini" id="speedRun" ${wait ? "disabled" : ""}>${last ? "Run again" : "Run speed test"}</button>` +
+        (wait ? `<small>available in ${Math.ceil(st.cooldown / 60)} min</small>` : "") + `</span>`;
+      h += `<small class="st-note">Runs from the server to the nearest M-Lab site for about 20&nbsp;s and moves up to ${
+        portMbps ? "about " + Math.max(1, Math.round(portMbps * 20 / 8 / 1000 * 10) / 10) + " GB" : "a few GB"}. M-Lab publishes every result, including this server's IP address.</small>`;
+    }
+    return h;
+  }
+  function paintSpeed() {
+    const el = $("speedtest");
+    if (el) el.innerHTML = speedHTML();
+    buildSpecsText();
+  }
+  function pollSpeed(ms) {
+    clearTimeout(speedTimer);
+    speedTimer = setTimeout(loadSpeed, ms);
+  }
+  async function loadSpeed() {
+    try { speed = await getJSON(S.api.speedtest); }
+    catch (_) { if (!speed) speed = { running: false, error: "Couldn't read the speed test status.", cooldown: 0 }; }
+    paintSpeed();
+    if (speed.running) pollSpeed(1000);
+    else if (speed.cooldown > 0 && openPop && openPop.pop.id === "popSpecs") pollSpeed(30000);
+  }
+  async function runSpeed(btn) {
+    btn.disabled = true;
+    try {
+      const r = await fetch(S.api.speedtest, { method: "POST", credentials: "same-origin", headers: { "X-Requested-With": "XMLHttpRequest" } });
+      if (r.status === 401) { location.reload(); return; }
+      const d = await r.json();
+      if (d.error) throw new Error(d.error);
+      speed = d;
+      if (!d.started_now && d.message) toast(d.message);
+    } catch (e) { toast("Couldn't start the speed test" + (e.message ? ": " + e.message : "")); }
+    paintSpeed();
+    if (speed && speed.running) pollSpeed(800);
+  }
+  document.addEventListener("click", (e) => {
+    const b = e.target.closest("#speedRun");
+    if (b) { e.stopPropagation(); runSpeed(b); }
+  });
   async function loadSpecs() {
     try { renderSpecs(await getJSON(S.api.specs)); }
     catch (_) { if (!specsText) $("specs").innerHTML = `<div class="empty">Couldn't read the server's specifications.</div>`; }

@@ -66,6 +66,7 @@ import core.hardware as hw
 import core.place as place
 import core.specs as specs
 import core.plex as plex
+import core.speedtest as speedtest
 
 #Prepare the background threads
 thread = None
@@ -223,7 +224,10 @@ def _api(fn):
         if not _is_admin(user):
             return flask.jsonify({"error": "forbidden"}), 403
         try:
-            return flask.jsonify(fn(user, *a, **k))
+            out = fn(user, *a, **k)
+            if isinstance(out, tuple):                 # (body, status)
+                return flask.jsonify(out[0]), out[1]
+            return flask.jsonify(out)
         except Exception as e:
             app.logger.exception("panel api %s failed", flask.request.path)
             return flask.jsonify({"error": "{}: {}".format(type(e).__name__, e)}), 500
@@ -288,6 +292,24 @@ def api_specs(user):
 @_api
 def api_plex(user):
     return plex.now_playing(app.config)
+
+@app.route('/api/speedtest', methods=['GET', 'POST'])
+@htpasswd.required
+@_api
+def api_speedtest(user):
+    if flask.request.method == 'POST':
+        # The browser sends cached Basic credentials with any request, so a plain cross-site form
+        # could start a 2 GB transfer. Require the header only our own XHR sets (a cross-site page
+        # can't add it without a CORS preflight, which we never answer) and a matching Origin.
+        origin = flask.request.headers.get('Origin')
+        if flask.request.headers.get('X-Requested-With') != 'XMLHttpRequest' or (
+                origin and origin.split('://', 1)[-1] != flask.request.host):
+            return {"error": "forbidden"}, 403
+        ok, msg = speedtest.start(app.config)
+        st = speedtest.status(app.config)
+        st["started_now"], st["message"] = ok, msg
+        return st
+    return speedtest.status(app.config)
 
 @socketio.on('connect', namespace='/websocket')
 def socket_connect():

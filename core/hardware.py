@@ -9,6 +9,7 @@ timer (swizzin-smart.timer, installed by scripts/install/panel.sh) dumps
 import glob
 import json
 import os
+import re
 import platform
 import shutil
 import socket
@@ -32,6 +33,8 @@ _gpu_cache = {"t": 0, "data": []}
 DRM = os.environ.get("SWZ_TEST_DRM", "/sys/class/drm")       # overrides only for tests
 GROUP_FILE = os.environ.get("SWZ_TEST_GROUP", "/etc/group")
 INSTALL_DIR = os.environ.get("SWZ_TEST_INSTALL", "/install")
+HWMON = os.environ.get("SWZ_TEST_HWMON", "/sys/class/hwmon")
+CPU_SYS = os.environ.get("SWZ_TEST_CPUSYS", "/sys/devices/system/cpu")
 _idle_prev = {}   # card -> (time, idle ms) for the iGPU load estimate
 _static_cache = {}
 
@@ -153,19 +156,35 @@ def _cpu_freqs():
 
 
 def _temps():
-    """Return cpu package temp, per-core temps and every other sensor found."""
-    cpu_pkg, cores, others = None, [], []
-    for hw in sorted(glob.glob("/sys/class/hwmon/hwmon*")):
+    """Return cpu package temp, per-core temps, {(package, core_id): {c, high}} and every other sensor."""
+    cpu_pkg, cores, by_core, others = None, [], {}, []
+    for hw in sorted(glob.glob(os.path.join(HWMON, "hwmon*"))):
         name = _read(os.path.join(hw, "name"), "")
-        for inp in sorted(glob.glob(os.path.join(hw, "temp*_input"))):
+        inputs = sorted(glob.glob(os.path.join(hw, "temp*_input")), key=lambda p: int(re.sub(r"\D", "", os.path.basename(p)) or 0))
+        labels = {inp: _read(inp.replace("_input", "_label"), "") or name for inp in inputs}
+        # coretemp has one hwmon per CPU package, labelled "Package id N"; its "Core K" labels use the
+        # kernel's core_id, which is how hyper-threads are matched to their physical core below.
+        pkg_id = None
+        for lab in labels.values():
+            m = re.match(r"Package id (\d+)", lab)
+            if m:
+                pkg_id = int(m.group(1))
+        if pkg_id is None:
+            m = re.search(r"\.(\d+)$", os.path.basename(os.path.realpath(os.path.join(hw, "device"))))
+            pkg_id = int(m.group(1)) if m and name == "coretemp" else 0
+        for inp in inputs:
             t = _read_int(inp)
             if t is None or t <= 0:
                 continue
             t = t / 1000
-            label = _read(inp.replace("_input", "_label"), "") or name
+            label = labels[inp]
             if name in ("coretemp", "k10temp", "zenpower", "cpu_thermal"):
                 if label.startswith("Core"):
                     cores.append(round(t, 1))
+                    m = re.match(r"Core\s*(\d+)", label)
+                    if m:
+                        high = _read_int(inp.replace("_input", "_max")) or _read_int(inp.replace("_input", "_crit"))
+                        by_core[(pkg_id, int(m.group(1)))] = {"c": round(t, 1), "high": high / 1000 if high and high > 0 else None}
                 elif cpu_pkg is None or label.startswith(("Package", "Tctl", "Tdie")):
                     cpu_pkg = round(t, 1)
             elif name not in ("nvme", "drivetemp", "amdgpu"):
@@ -177,7 +196,28 @@ def _temps():
                 if v:
                     cpu_pkg = round(v / 1000, 1)
                     break
-    return cpu_pkg, cores, others[:8]
+    return cpu_pkg, cores, by_core, others[:8]
+
+
+_topology = {}
+
+
+def _thread_temps(n, by_core):
+    """Temperature of the physical core under each logical CPU (cpu0..cpu{n-1}), or None.
+
+    Linux numbers hyper-threads so that siblings are usually far apart (on a 4-core/8-thread Xeon
+    cpu0 and cpu4 share core 0), so this reads the real topology instead of guessing from order."""
+    if not by_core:
+        return []
+    out = []
+    for i in range(n):
+        if i not in _topology:
+            base = os.path.join(CPU_SYS, "cpu%d" % i, "topology")
+            _topology[i] = (_read_int(base + "/physical_package_id"), _read_int(base + "/core_id"))
+        pkg, core = _topology[i]
+        hit = by_core.get((pkg or 0, core)) if core is not None else None
+        out.append(hit)
+    return out if any(out) else []
 
 
 def _gpus():
@@ -409,7 +449,7 @@ def live():
             d["busy"] = min(round(max(busy - p[2], 0) / (dt * 10), 1), 100)
         disk_io[name] = d
 
-    pkg, core_temps, other_temps = _temps()
+    pkg, core_temps, by_core, other_temps = _temps()
     freqs = _cpu_freqs()
     load = (_read("/proc/loadavg", "0 0 0") or "0 0 0").split()[:3]
     uptime = float((_read("/proc/uptime", "0") or "0").split()[0])
@@ -420,7 +460,7 @@ def live():
         "cpu": {"total": pct("cpu"), "iowait": iowait, "cores": cores,
                 "freq_avg": round(sum(freqs) / len(freqs)) if freqs else None,
                 "freq_max": round(max(freqs)) if freqs else None,
-                "temp": pkg, "core_temps": core_temps},
+                "temp": pkg, "core_temps": core_temps, "thread_temps": _thread_temps(len(cores), by_core)},
         "sensors": other_temps,
         "mem": _mem(),
         "net": {"iface": iface, "ifaces": netrates},

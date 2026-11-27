@@ -27,7 +27,7 @@ bad = 0
 for path, needs_auth in [("/login", False), ("/", True), ("/classic", True), ("/api/system", True), ("/api/live", True),
                          ("/api/live", True), ("/api/storage", True), ("/api/traffic", True), ("/api/place", True),
                          ("/api/fail2ban", True), ("/api/weather?lat=1&lon=2", True), ("/apps/status", True),
-                         ("/api/specs", True), ("/api/plex", True), ("/api/procs", True)]:
+                         ("/api/specs", True), ("/api/plex", True), ("/api/procs", True), ("/api/speedtest", True)]:
     r = client.get(path, headers=auth if needs_auth else {})
     ok = r.status_code == 200
     print("{:4} {}".format(r.status_code, path))
@@ -35,6 +35,10 @@ for path, needs_auth in [("/login", False), ("/", True), ("/classic", True), ("/
 r = client.get("/api/system")
 print("{:4} /api/system without auth (expect 401/302)".format(r.status_code))
 bad += r.status_code not in (401, 302)
+# the speed test only starts from our own XHR (cached Basic credentials ride along on any request)
+r = client.post("/api/speedtest", headers=auth)
+print("{:4} POST /api/speedtest without X-Requested-With (expect forbidden)".format(r.status_code))
+bad += r.status_code != 403
 # single sign-on endpoint used by nginx auth_request (FileBrowser Quantum)
 wrong = {"Authorization": "Basic " + base64.b64encode(b"smoke:nope").decode()}
 checks = [("no login", client.get("/auth/check").status_code, 401),

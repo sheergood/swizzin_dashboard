@@ -112,7 +112,7 @@
     <div class="pop pop-wide pop-specs glass" id="popSpecs" role="dialog" aria-label="Server specifications" hidden>
       <div class="pop-head"><span class="label">Server specifications</span>
         <button class="pill pop-mini" id="specsCopy" title="Copy all specifications as text">Copy</button></div>
-      <div class="specs" id="specs"><div class="empty">Loading…</div></div>
+      <div class="pop-scroll"><div class="specs" id="specs"><div class="empty">Loading…</div></div></div>
     </div>
     <div class="pop glass" id="popClock" role="dialog" aria-label="Server time" hidden>
       <div class="pop-head"><span class="label">Server time</span><span class="muted" id="tzName"></span></div>
@@ -317,6 +317,7 @@
         procs: {{ url_for('api_procs')|tojson }},
         specs: {{ url_for('api_specs')|tojson }},
         plex: {{ url_for('api_plex')|tojson }},
+        speedtest: {{ url_for('api_speedtest')|tojson }},
         status: {{ url_for('app_status')|tojson }},
         service: {{ url_for('service')|tojson }},
         quota: {{ url_for('quota_free')|tojson }}

@@ -2,3 +2,5 @@
 __pycache__/
 *.pyc
 swizzin.cfg
+speedtest.json
+speedtest.json.tmp

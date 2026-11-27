@@ -3,6 +3,28 @@
 Fork of [liaralabs/swizzin_dashboard](https://github.com/liaralabs/swizzin_dashboard), tuned for
 seedbox servers. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [sheergood-7] — Nov 27 2026
+
+### Added
+- **Speed test in Specs (M-Lab ndt7).** A *Speed test* row under *Public bandwidth* measures the
+  server's own line: download, upload and ping to the nearest M-Lab site, which M-Lab's locate service
+  picks from the server's IP. Live progress while it runs; the last result (with M-Lab city and how
+  long ago) is kept across restarts and included in *Copy*.
+  - Runs on the server in its own process (`core/ndt7.py`, standard library only), never in your
+    browser, so it measures the datacenter link and never slows the panel. About 20 s.
+  - Only starts when you press the button: one test at a time, at most one every 10 minutes (a
+    1 Gbit/s test moves about 2.5 GB). Admin only; the request must come from the dashboard itself
+    (`X-Requested-With` header and same Origin), so another site can't trigger it with your saved login.
+  - The popover says plainly that M-Lab publishes every result, including the server's IP address.
+- **Per-core temperatures.** Each per-core load tile shows its core's temperature, coloured when it
+  nears the CPU's own "high" mark (Intel coretemp) or 80/90 °C. Hyper-threads are matched to their
+  physical core from the kernel's CPU topology (on a 4-core/8-thread Xeon, C0 and C4 share core 0),
+  replacing the old guess from CPU order that paired threads with the wrong core.
+
+### Fixed
+- Specs and drive popovers: the glass rim and header no longer scroll away with the content and
+  spill past the rounded corners; only the list inside scrolls.
+
 ## [sheergood-6] — Nov 27 2026
 
 ### Added
