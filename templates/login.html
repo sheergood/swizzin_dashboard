@@ -9,7 +9,16 @@
   <link rel="shortcut icon" href="{{ url_for('static', filename='img/favicon/favicon.ico') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/glass.css') }}">
   <style>
-    body { min-height: 100vh; display: grid; place-items: center; padding: 24px; overflow: hidden; perspective: 1200px; }
+    body { min-height: 100vh; min-height: 100dvh; display: grid; place-items: center; padding: 24px; overflow-x: hidden; perspective: 1200px; }
+    /* short screens (phones in landscape): tighter card, and the page scrolls instead of cutting it off */
+    @media (max-height: 600px) {
+      body { padding: 12px; place-items: start center; }
+      .login { padding: 18px 24px 16px; gap: 9px; }
+      .login img { width: 42px; height: 42px; margin-bottom: 0; }
+      .login p { margin: -6px 0 2px; }
+      .field input { padding: 10px 13px; }
+      .go { padding: 11px; margin-top: 2px; }
+    }
 
     /* night sky: deep gradient + faint nebula, with the constellation canvas on top */
     .sky { position: fixed; inset: 0; z-index: -2;
@@ -18,13 +27,18 @@
         radial-gradient(900px 650px at 12% 88%, rgba(20,120,150,.22), transparent 60%),
         radial-gradient(700px 500px at 50% 50%, rgba(40,60,140,.18), transparent 70%),
         linear-gradient(180deg, #05060d 0%, #080b1a 55%, #0b0c18 100%); }
-    #stars { position: fixed; inset: 0; z-index: -1; width: 100vw; height: 100vh; display: block; }
+    #stars { position: fixed; inset: 0; z-index: -1; width: 100%; height: 100%; display: block; }
     .login { position: relative; z-index: 1; width: min(400px, 100%); padding: 38px 32px 30px; display: flex; flex-direction: column; gap: 14px;
       text-align: center; border-radius: 30px; transform-style: preserve-3d; transition: transform .25s ease-out;
       background: linear-gradient(150deg, rgba(255,255,255,.16) 0%, rgba(255,255,255,.05) 40%, rgba(255,255,255,.09) 100%);
       box-shadow: inset 0 1px 0 rgba(255,255,255,.45), inset 0 -1px 0 rgba(255,255,255,.08), inset 0 0 40px rgba(255,255,255,.05),
         0 40px 80px -20px rgba(0,0,0,.7), 0 0 0 1px rgba(255,255,255,.06); }
     html[data-refraction="on"] .login { backdrop-filter: blur(20px) url(#liquidStrong) saturate(190%) brightness(1.08); }
+    /* 8K-class screens: skip the live refraction/blur (see glass.css) and pre-blend the frost instead */
+    @media (min-width: 6000px), (min-width: 3200px) and (min-resolution: 1.75dppx) {
+      html[data-refraction="on"] .login, .login { backdrop-filter: none; -webkit-backdrop-filter: none;
+        background: linear-gradient(150deg, rgba(70,78,120,.82) 0%, rgba(34,38,64,.86) 45%, rgba(48,54,86,.84) 100%); }
+    }
     /* frosted grain inside the glass */
     .frost { position: absolute; inset: 0; border-radius: inherit; pointer-events: none; opacity: .14; mix-blend-mode: overlay;
       background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='1.1' numOctaves='3' stitchTiles='stitch'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>"); }
@@ -85,10 +99,11 @@
       var probe = { n: 0, sum: 0 }, W = 0, H = 0, dpr = 1, stars = [], link = 130, mouse = { x: -1e4, y: -1e4, on: false }, shoot = null, raf = 0, last = 0;
       function rnd(a, b) { return a + Math.random() * (b - a); }
       function resize() {
-        dpr = Math.min(window.devicePixelRatio || 1, 2); W = innerWidth; H = innerHeight;
-        cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        var z = document.documentElement.currentCSSZoom || 1;
+        dpr = Math.min(window.devicePixelRatio || 1, 2); W = innerWidth / z; H = innerHeight / z;
+        cv.width = Math.round(W * z * dpr); cv.height = Math.round(H * z * dpr); ctx.setTransform(dpr * z, 0, 0, dpr * z, 0, 0);
         link = Math.max(95, Math.min(150, Math.sqrt(W * H) / 7));
-        var n = Math.round(Math.max(55, Math.min(170, (W * H) / 7500)));
+        var n = Math.round(Math.max(55, Math.min(240, (W * H) / 7500)));
         while (stars.length < n) stars.push({ x: rnd(0, W), y: rnd(0, H), vx: rnd(-.18, .18), vy: rnd(-.14, .14),
           r: Math.random() < .12 ? rnd(1.5, 2.2) : rnd(.5, 1.3), t: rnd(0, 6.28), ts: rnd(.6, 1.8), hue: Math.random() < .2 ? 268 : 215 });
         stars.length = n;
@@ -148,7 +163,7 @@
       }
       function start() { cancelAnimationFrame(raf); last = 0; raf = requestAnimationFrame(frame); }
       addEventListener("resize", function () { resize(); if (still) frame(0); });
-      addEventListener("pointermove", function (e) { mouse.x = e.clientX; mouse.y = e.clientY; mouse.on = true; }, { passive: true });
+      addEventListener("pointermove", function (e) { var z = document.documentElement.currentCSSZoom || 1; mouse.x = e.clientX / z; mouse.y = e.clientY / z; mouse.on = true; }, { passive: true });
       document.addEventListener("pointerleave", function () { mouse.on = false; });
       document.addEventListener("visibilitychange", function () { if (document.hidden) cancelAnimationFrame(raf); else if (!still) start(); });
       resize(); if (still) frame(0); else start();

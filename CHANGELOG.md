@@ -15,6 +15,16 @@ seedbox servers. Format follows [Keep a Changelog](https://keepachangelog.com/en
   syntax, smoke test.
 
 ### Added
+- **Every screen from phones to 8K** — tested on 15 viewports (360 px phones, phone landscape,
+  tablets, 720p, laptops incl. HiDPI, 1080p, 1440p, 4K at 100 %/150 %, TVs, 8K at 100 %/200 %) for
+  horizontal scrolling, off-screen elements, clipped text and errors:
+  - 4K/5K/8K screens and TV browsers without OS scaling: the UI scales 1.5×–3× (CSS `zoom`) so it
+    lays out like a ~2560 px screen; charts, tooltips and popovers are zoom-aware.
+  - 8K-class screens (~33 M device pixels) use pre-blended frosted glass and a static background
+    instead of live blur and animated light blobs, which made GPU tiles fail to paint.
+  - Browsers without `backdrop-filter` (older TV browsers) get solid glass.
+  - Phones: the top bar truncates the OS line instead of overlapping the user button; the login
+    card fits/scrolls on short landscape screens; bar-chart value labels hide when too narrow.
 - **Login page: constellation theme** — drifting stars that link to their neighbours and to the
   pointer, twinkling glow stars and the odd shooting star over a deep-night nebula, behind the
   frosted liquid-glass card. Pauses in background tabs, draws one still frame with reduced motion,

@@ -140,11 +140,12 @@ html[data-side="mini"] .side-item, html[data-side="mini"] .side-toggle { justify
 /* ---------------------------------------------------------------- topbar */
 .topbar { display: flex; align-items: center; gap: 18px; padding: 12px 14px 12px 18px; margin-bottom: 18px;
   position: sticky; top: 10px; z-index: 20; border-radius: 999px; }
-.brand { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.brand { display: flex; align-items: center; gap: 12px; min-width: 0; flex: 1 1 auto; }
+.brand > div { min-width: 0; }
 .brand-mark { width: 28px; height: 28px; border-radius: 8px; }
-.host { font-weight: 700; font-size: 16px; letter-spacing: .01em; white-space: nowrap; }
+.host { font-weight: 700; font-size: 16px; letter-spacing: .01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sub { color: var(--ink-2); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.chips { display: flex; gap: 8px; flex-wrap: wrap; flex: 1; justify-content: center; }
+.chips { display: flex; gap: 8px; flex-wrap: wrap; flex: 0 1 auto; justify-content: center; min-width: 0; }
 .chip { font-size: 12px; color: var(--ink-2); padding: 5px 11px; border-radius: 999px; background: rgba(255,255,255,.06);
   border: 1px solid var(--line); white-space: nowrap; }
 .chip b { color: var(--ink); font-weight: 600; }
@@ -470,3 +471,44 @@ a.app-name:hover { text-decoration: underline; text-underline-offset: 3px; }
   background: rgba(18,20,30,.8); }
 
 @media (forced-colors: active) { .glass { border: 1px solid CanvasText; } }
+
+/* ---------------------------------------------------------------- big screens & TVs
+   4K / 5K / 8K displays without OS scaling (and many TV browsers) report enormous CSS widths, which
+   makes 14 px text unreadable. Scale the whole UI so it lays out like a ~2560 px screen; JS reads the
+   zoom (currentCSSZoom) for chart, tooltip and popover maths. Heavy SVG refraction is skipped there. */
+@media (min-width: 3200px) { html { zoom: 1.5; } }
+@media (min-width: 4400px) { html { zoom: 2; } }
+@media (min-width: 6000px) { html { zoom: 2.5; } }
+@media (min-width: 7000px) { html { zoom: 3; } }
+@media (min-width: 3200px) {
+  html[data-refraction="on"] .liquid { backdrop-filter: blur(14px) saturate(170%); -webkit-backdrop-filter: blur(14px) saturate(170%); }
+}
+
+/* browsers without backdrop-filter (older TV / embedded browsers): solid glass instead of see-through */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .glass { background: linear-gradient(135deg, rgba(40,46,66,.96), rgba(26,30,44,.96)); }
+  .pop, .dropdown, .tooltip, .toast { background: rgba(24,27,40,.98); }
+}
+
+/* traffic bars: hide the value labels when the 7-day chart is too narrow to fit them */
+.week { container-type: inline-size; }
+@container (max-width: 430px) { .bars .col .vl { display: none; } .bars .col { padding: 0 12%; } }
+
+/* 8K (≈33 M device pixels: 7680 px at 1×, or 3840 px at 2×): live backdrop blur over every card is too
+   much for many GPUs and tiles fail to paint. Use pre-blended frosted glass there — same gradients, rim
+   and sheen, no live blur. */
+@media (min-width: 6000px), (min-width: 3200px) and (min-resolution: 1.75dppx) {
+  .glass, html[data-refraction="on"] .liquid { backdrop-filter: none; -webkit-backdrop-filter: none; }
+  .glass { background: linear-gradient(135deg, rgba(58, 66, 98, .78) 0%, rgba(30, 35, 54, .82) 45%, rgba(40, 46, 70, .8) 100%);
+    border: 1px solid rgba(255, 255, 255, .14); border-top-color: rgba(255, 255, 255, .3); }
+  /* fewer composited layers: the masked rim and pointer sheen become a plain border, and the animated
+     light blobs become a static version of the same gradient */
+  .glass::before, .glass::after { content: none; }
+  .blob, .grain { display: none; }
+  .ambient { background:
+      radial-gradient(40% 50% at 12% 8%, rgba(47, 109, 240, .34), transparent 70%),
+      radial-gradient(35% 45% at 92% 28%, rgba(138, 60, 240, .3), transparent 70%),
+      radial-gradient(40% 45% at 45% 100%, rgba(0, 179, 160, .22), transparent 70%),
+      radial-gradient(25% 30% at 78% 88%, rgba(255, 122, 61, .16), transparent 70%), var(--bg); }
+  .pop, .dropdown, .tooltip, .toast { background: rgba(22, 25, 38, .96); }
+}

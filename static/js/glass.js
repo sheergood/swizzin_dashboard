@@ -36,6 +36,10 @@
     return r.json();
   }
 
+  /* CSS zoom applied on very large screens (see glass.css). getBoundingClientRect/clientX are in
+     viewport pixels, while style.left/top are in zoomed CSS pixels, so positions are divided by it. */
+  const zoom = () => document.documentElement.currentCSSZoom || parseFloat(getComputedStyle(document.documentElement).zoom) || 1;
+
   /* ------------------------------------------------------------ tooltip */
   const tip = $("tip");
   function showTip(html, x, y) {
@@ -44,7 +48,7 @@
     let left = x + 16, top = y + 16;
     if (left + r.width > innerWidth - 8) left = x - r.width - 16;
     if (top + r.height > innerHeight - 8) top = y - r.height - 16;
-    tip.style.left = left + "px"; tip.style.top = top + "px";
+    const z = zoom(); tip.style.left = left / z + "px"; tip.style.top = top / z + "px";
   }
   const hideTip = () => { tip.hidden = true; };
 
@@ -71,10 +75,10 @@
       if (this.hover != null) this.tooltipAt(this.hover.i, this.hover.x, this.hover.y);
     }
     resize() {
-      const dpr = devicePixelRatio || 1, r = this.el.getBoundingClientRect();
-      this.w = r.width; this.h = r.height;
+      const dpr = devicePixelRatio || 1, z = zoom(), r = this.el.getBoundingClientRect();
+      this.w = r.width / z; this.h = r.height / z;            // drawing units = layout px (match the page's text size)
       this.c.width = Math.round(r.width * dpr); this.c.height = Math.round(r.height * dpr);
-      this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0); this.draw();
+      this.ctx.setTransform(dpr * z, 0, 0, dpr * z, 0, 0); this.draw();
     }
     max() {
       if (this.o.max) return this.o.max;
@@ -132,9 +136,9 @@
       }
     }
     onMove(e) {
-      const r = this.el.getBoundingClientRect(), g = this.geom();
-      const pw = r.width - g.l - g.r;
-      let i = Math.round(((e.clientX - r.left - g.l) / pw) * (HISTORY - 1));
+      const z = zoom(), r = this.el.getBoundingClientRect(), g = this.geom();
+      const pw = r.width / z - g.l - g.r;
+      let i = Math.round((((e.clientX - r.left) / z - g.l) / pw) * (HISTORY - 1));
       const len = Math.max(...this.data.map((d) => d.length));
       i = Math.max(HISTORY - len, Math.min(HISTORY - 1, i));
       if (!len) return;
@@ -573,9 +577,9 @@
     openPop.pop.hidden = true; openPop.btn.setAttribute("aria-expanded", "false"); openPop = null;
   }
   function placePop(pop, anchor) {
-    const r = anchor.getBoundingClientRect(), w = pop.offsetWidth;
+    const z = zoom(), r = anchor.getBoundingClientRect(), w = pop.getBoundingClientRect().width;
     const left = Math.max(12, Math.min(r.left, innerWidth - w - 12));
-    pop.style.left = left + scrollX + "px"; pop.style.top = r.bottom + scrollY + 8 + "px";
+    pop.style.left = (left + scrollX) / z + "px"; pop.style.top = (r.bottom + scrollY + 8) / z + "px";
   }
   document.addEventListener("click", (e) => {
     const btn = e.target.closest("[data-pop]");
