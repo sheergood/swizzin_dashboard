@@ -3,6 +3,21 @@
 Fork of [liaralabs/swizzin_dashboard](https://github.com/liaralabs/swizzin_dashboard), tuned for
 seedbox servers. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [sheergood-5] — Nov 27 2026
+
+### Fixed
+- **Charts and text stay readable in every sky.** At golden hour and sunset the glass cards picked up
+  so much orange from the sky that the orange upload bars and grey labels disappeared into them.
+  - The sky engine now works out how bright the sky behind the glass can get and darkens the glass
+    just enough to keep it readable, using a deep shade of the sky's own colour, so cards still glow
+    rose at sunset and blue at noon instead of turning grey.
+  - New text colours: secondary and muted text are lighter in Auto and Dark and darker in Light.
+  - New chart colours (download blue, upload orange, teal), checked with a colour-blind-safe palette
+    validator against the darkest and brightest glass each theme can produce.
+  - Measured on screen (`tests/tools/contrast_audit.py`, 8 sky phases and themes): main text 8:1 or
+    better, secondary 5.7:1+, muted 3.7:1+, chart colours 3.2:1+ (night, dawn, golden hour, sunset,
+    dusk, noon, Light, Dark). Previously chart colours were as low as 1.0:1 at sunset.
+
 ## [sheergood-4] — Nov 27 2026
 
 ### Changed

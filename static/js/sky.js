@@ -81,6 +81,33 @@
   const phaseName = (el, evening) => el < -12 ? "Night" : el < -0.8 ? (evening ? "Dusk" : "Dawn") : el < 8 ? (evening ? "Golden hour · evening" : "Golden hour · morning") : "Day";
 
   /* ---------------------------------------------------------------- apply */
+  /* ---------------------------------------------------------------- legibility
+     Glass cards are see-through, so how bright they look depends on the sky behind them: a golden-hour
+     or noon sky makes them bright enough to wash out light text and coloured charts. Instead of
+     hand-tuning a tint per stop, work out the brightest colour the glass can sit on (sky stops, and
+     the glows screened over the horizon) and darken the glass just enough that, after the frost, its
+     luminance stays under GLASS_MAX_L. That keeps white text >= 8:1, secondary text >= 5:1, muted
+     text and chart colours >= 3:1 in every phase (checked with the dataviz palette validator), while letting as much sky through as it can. */
+  const GLASS_MAX_L = 0.11, FROST = 0.09, GLOW_WEIGHT = 0.7;   // estimate is conservative: measured worst is ~half
+  // the tint is the sky's own mid colour taken deep, so cards keep the hue of the hour (rose at
+  // sunset, blue at noon, indigo at night) instead of turning grey
+  const tintRgb = (p) => hex(mix(p.mid, "#05070f", 0.82));
+  const lin = (v) => { v /= 255; return v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); };
+  const luminance = (c) => 0.2126 * lin(c[0]) + 0.7152 * lin(c[1]) + 0.0722 * lin(c[2]);
+  const screenMix = (a, b, o) => a.map((v, i) => v + ((255 - (255 - v) * (255 - b[i]) / 255) - v) * o);
+  function legibleTint(p) {
+    const base = [p.top, p.mid, p.low].map(hex);
+    const cands = base.slice();
+    for (const g of [p.g1, p.g2, p.g3, p.g4]) for (const b of base) cands.push(screenMix(b, hex(g), GLOW_WEIGHT));
+    const brightest = cands.reduce((m, c) => (luminance(c) > luminance(m) ? c : m), cands[0]);
+    const T = tintRgb(p);
+    const lum = (a) => luminance(brightest.map((v, i) => { const t = v + (T[i] - v) * a; return t + (255 - t) * FROST; }));
+    if (lum(p.tint) <= GLASS_MAX_L) return p.tint;
+    let lo = p.tint, hi = 0.92;
+    for (let k = 0; k < 18; k++) { const m = (lo + hi) / 2; if (lum(m) > GLASS_MAX_L) lo = m; else hi = m; }
+    return hi;
+  }
+
   let current = { elevation: 0, phase: "", stars: 1, source: "timezone", mode: "auto" };
   function apply() {
     const mode = modeNow(), loc = location(), now = new Date();
@@ -92,7 +119,8 @@
     const s = root.style;
     s.setProperty("--sky-top", p.top); s.setProperty("--sky-mid", p.mid); s.setProperty("--sky-low", p.low);
     s.setProperty("--glow-1", p.g1); s.setProperty("--glow-2", p.g2); s.setProperty("--glow-3", p.g3); s.setProperty("--glow-4", p.g4);
-    s.setProperty("--glass-tint", p.tint.toFixed(3)); s.setProperty("--stars", p.stars.toFixed(3));
+    s.setProperty("--glass-tint", (themed ? p.tint : legibleTint(p)).toFixed(3)); s.setProperty("--stars", p.stars.toFixed(3));
+    s.setProperty("--glass-tint-rgb", tintRgb(p).join(", "));
     root.dataset.theme = themed ? (mode === "day" ? "light" : "dark") : "sky";
     root.dataset.skyphase = themed ? (mode === "day" ? "light" : "night") : el < -6 ? "night" : el < 8 ? "twilight" : "day";
     const meta = document.querySelector('meta[name="theme-color"]');

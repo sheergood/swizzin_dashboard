@@ -13,14 +13,13 @@ html { transition: --sky-top 6s ease, --sky-mid 6s ease, --sky-low 6s ease, --gl
   --glow-4 6s ease, --glass-tint 6s ease, --stars 6s ease; }
 html.sky-instant { transition: none !important; }
 /* brighter skies: lift secondary text so it keeps its contrast against the lighter glass */
-html[data-skyphase="twilight"] { --ink-2: #bcc4d8; --ink-3: #8f9bb8; }
-html[data-skyphase="day"] { --ink-2: #d2dbee; --ink-3: #aab9d6; --line: rgba(var(--hl), .12); }
+html[data-skyphase="day"], html[data-skyphase="twilight"] { --line: rgba(var(--hl), .12); }
 :root {
   color-scheme: dark;
   --bg: #07080d;
   --ink: #f3f5fa;
-  --ink-2: #a7aec0;
-  --ink-3: #6d7488;
+  --ink-2: #c4ccdd;          /* >= 5:1 on the brightest glass the sky engine allows (L 0.06) */
+  --ink-3: #9aa5bd;          /* >= 3:1 there; muted labels only */
   --line: rgba(var(--hl), .08);
   --hl: 255, 255, 255;       /* colour of subtle tints and hairlines; slate on the light theme */
   --grid: rgba(var(--hl), .06); --grid-strong: rgba(var(--hl), .16); --cursor: rgba(var(--hl), .35);
@@ -29,10 +28,11 @@ html[data-skyphase="day"] { --ink-2: #d2dbee; --ink-3: #aab9d6; --line: rgba(var
   --glass-edge: rgba(255, 255, 255, .16);
   --glass-blur: 26px;
   --radius: 22px;
-  /* data roles (validated dark steps) */
-  --s1: #338ced;   /* download / primary series */
-  --s2: #e76624;   /* upload */
-  --s3: #00a888;
+  /* data roles: validated (dataviz validate_palette) against both the darkest and the brightest glass
+     the sky allows (#141a26 .. #464646): lightness band, CVD separation, >= 3:1 contrast */
+  --s1: #4a9bf2;   /* download / primary series */
+  --s2: #e97b2e;   /* upload */
+  --s3: #1cb591;
   --good: #0aac23;
   --warn: #fbb315;
   --serious: #f18a59;
@@ -82,7 +82,7 @@ html[data-motion="off"] .blob { animation: none; }
 .glass {
   position: relative;
   /* the tint layer darkens the glass as the sky brightens, so light text keeps its contrast by day */
-  background: linear-gradient(rgba(6, 10, 24, var(--glass-tint)), rgba(6, 10, 24, var(--glass-tint))), var(--glass-fill);
+  background: linear-gradient(rgba(var(--glass-tint-rgb, 6, 10, 24), var(--glass-tint)), rgba(var(--glass-tint-rgb, 6, 10, 24), var(--glass-tint))), var(--glass-fill);
   -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(170%);
   backdrop-filter: blur(var(--glass-blur)) saturate(170%);
   border-radius: var(--radius);
@@ -619,7 +619,7 @@ a.app-name:hover { text-decoration: underline; text-underline-offset: 3px; }
       radial-gradient(40% 45% at 45% 100%, color-mix(in srgb, var(--glow-3) 28%, transparent), transparent 70%),
       linear-gradient(180deg, var(--sky-top), var(--sky-mid) 55%, var(--sky-low)); }
   }
-  .glass { background: linear-gradient(rgba(6, 10, 24, var(--glass-tint)), rgba(6, 10, 24, var(--glass-tint))),
+  .glass { background: linear-gradient(rgba(var(--glass-tint-rgb, 6, 10, 24), var(--glass-tint)), rgba(var(--glass-tint-rgb, 6, 10, 24), var(--glass-tint))),
       linear-gradient(135deg, rgba(58, 66, 98, .78) 0%, rgba(30, 35, 54, .82) 45%, rgba(40, 46, 70, .8) 100%); }
   .pop, .dropdown, .tooltip, .toast { background: rgba(22, 25, 38, .96); }
 }
@@ -638,7 +638,7 @@ html[data-theme="light"] {
   color-scheme: light;
   --bg: #eff3f7;
   --hl: 15, 23, 42;
-  --ink: #18212c; --ink-2: #4a5566; --ink-3: #7b8696;
+  --ink: #18212c; --ink-2: #3f4a5a; --ink-3: #5b6677;
   --line: rgba(15, 23, 42, .09);
   --glass-fill: linear-gradient(135deg, rgba(255,255,255,.80) 0%, rgba(255,255,255,.64) 48%, rgba(255,255,255,.74) 100%);
   --glass-blur: 22px;
@@ -646,14 +646,14 @@ html[data-theme="light"] {
   --surface-solid: rgba(255,255,255,.97); --knob-ring: #ffffff; --well: rgba(15,23,42,.045);
   --accent: #16a34a; --accent-soft: #e6f6ec; --accent-ink: #157a3a;
   /* data roles: the light-surface steps of the same hues */
-  --s1: #2477d1; --s2: #d9601d; --s3: #0b927a;
+  --s1: #2272d6; --s2: #cc5a14; --s3: #0b8a71;   /* validated on #e3e7ec .. #f6f8fb */
   --good: #16a34a; --warn: #c98a00; --serious: #d9682f; --crit: #d23435;
 }
 html[data-theme="dark"] {
   --bg: #141c25;
-  --ink: #e7ecf2; --ink-2: #a2aebd; --ink-3: #737f8f;
+  --ink: #e9eef4; --ink-2: #c0cad6; --ink-3: #95a1b1;
   --line: rgba(255, 255, 255, .07);
-  --glass-fill: linear-gradient(135deg, rgba(44,60,76,.66) 0%, rgba(33,46,60,.58) 48%, rgba(39,54,69,.62) 100%);
+  --glass-fill: linear-gradient(135deg, rgba(36,50,64,.72) 0%, rgba(28,39,51,.66) 48%, rgba(32,45,58,.7) 100%);
   --surface-solid: rgba(29,40,52,.98); --knob-ring: #1d2834;
   --accent: #22c55e; --accent-soft: rgba(34,197,94,.13); --accent-ink: #6ee7a0;
   --good: #22c55e;
@@ -669,7 +669,7 @@ html[data-theme="dark"] .glass {
   box-shadow: inset 0 1px 0 rgba(255,255,255,.09), inset 0 0 0 1px rgba(255,255,255,.04),
     0 1px 2px rgba(0,0,0,.3), 0 14px 36px -14px rgba(0,0,0,.55);
 }
-html[data-theme="dark"] .glass::before { background: linear-gradient(140deg, rgba(255,255,255,.22), rgba(255,255,255,.04) 30%, rgba(255,255,255,.01) 60%, rgba(255,255,255,.1)); }
+html[data-theme="dark"] .glass::before { background: linear-gradient(140deg, rgba(255,255,255,.16), rgba(255,255,255,.03) 30%, rgba(255,255,255,.01) 60%, rgba(255,255,255,.08)); }
 /* backdrop: pastel glows multiply into the light page instead of screening into white */
 html[data-theme="light"] .blob { mix-blend-mode: multiply; opacity: .5; }
 html[data-theme="light"] .grain { opacity: .035; }
