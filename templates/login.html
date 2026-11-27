@@ -22,11 +22,16 @@
 
     /* night sky: deep gradient + faint nebula, with the constellation canvas on top */
     .sky { position: fixed; inset: 0; z-index: -2;
-      background:
+      background: linear-gradient(180deg, var(--sky-top) 0%, var(--sky-mid) 55%, var(--sky-low) 100%); }
+    /* tints only where color-mix() exists: a var() inside an unsupported function does not fall back to an
+       earlier declaration, it computes to "unset" and the background would vanish */
+    @supports (background: color-mix(in srgb, red 50%, transparent)) {
+      .sky { background:
         radial-gradient(1100px 700px at 78% 12%, color-mix(in srgb, var(--glow-2) 32%, transparent), transparent 60%),
         radial-gradient(900px 650px at 12% 88%, color-mix(in srgb, var(--glow-3) 28%, transparent), transparent 60%),
         radial-gradient(700px 500px at 50% 50%, color-mix(in srgb, var(--glow-1) 22%, transparent), transparent 70%),
         linear-gradient(180deg, var(--sky-top) 0%, var(--sky-mid) 55%, var(--sky-low) 100%); }
+    }
     #stars { position: fixed; inset: 0; z-index: -1; width: 100%; height: 100%; display: block; }
     .login { position: relative; z-index: 1; width: min(400px, 100%); padding: 38px 32px 30px; display: flex; flex-direction: column; gap: 14px;
       text-align: center; border-radius: 30px; transform-style: preserve-3d; transition: transform .25s ease-out;
@@ -62,11 +67,34 @@
       background: linear-gradient(180deg, rgba(0,0,0,.28), rgba(0,0,0,.16)); border: 1px solid rgba(255,255,255,.12);
       box-shadow: inset 0 2px 6px rgba(0,0,0,.35), 0 1px 0 rgba(255,255,255,.08); transition: border-color .2s, box-shadow .2s; }
     .field input:focus { border-color: rgba(90,169,255,.8); box-shadow: inset 0 2px 6px rgba(0,0,0,.35), 0 0 0 4px rgba(51,140,237,.22); }
-    .go { position: relative; overflow: hidden; font: inherit; font-weight: 650; font-size: 15px; color: #fff; border: 0; border-radius: 16px; padding: 13px;
-      cursor: pointer; margin-top: 6px; background: linear-gradient(180deg, #5aa9ff, #2370cd);
-      box-shadow: inset 0 1px 0 rgba(255,255,255,.5), inset 0 -2px 6px rgba(0,0,0,.2), 0 12px 28px -8px rgba(51,140,237,.85); }
-    .go::after { content: ""; position: absolute; inset: 0 0 50% 0; border-radius: 16px 16px 40% 40%; background: linear-gradient(180deg, rgba(255,255,255,.28), transparent); }
-    .go:disabled { opacity: .6; cursor: progress; }
+    /* Sign in: a liquid-glass button tinted by the living sky (same --glow colours as the background),
+       so it shifts from deep indigo at night through rose/gold at dawn and dusk to bright azure by day */
+    .go { position: relative; overflow: hidden; isolation: isolate; font: inherit; font-weight: 650; font-size: 15px; letter-spacing: .01em;
+      color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,.35); border-radius: 16px; padding: 13px; cursor: pointer; margin-top: 6px;
+      border: 1px solid rgba(255,255,255,.34); border-top-color: rgba(255,255,255,.6);
+      background: linear-gradient(180deg, rgba(255,255,255,.24), rgba(255,255,255,.06) 55%, rgba(255,255,255,.12)), rgba(59,111,216,.82);
+      -webkit-backdrop-filter: blur(14px) saturate(190%); backdrop-filter: blur(14px) saturate(190%);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.55), inset 0 -8px 18px rgba(0,0,0,.14), inset 0 0 0 1px rgba(255,255,255,.06),
+        0 10px 26px -10px rgba(59,111,216,.8), 0 2px 8px rgba(0,0,0,.25);
+      transition: transform .15s ease, box-shadow .25s ease, filter .25s ease; }
+    /* specular highlight across the top half, and a light that follows the pointer */
+    .go::before { content: ""; position: absolute; inset: 1px 1px 52% 1px; border-radius: 15px 15px 40% 40% / 15px 15px 22px 22px; z-index: -1;
+      background: linear-gradient(180deg, rgba(255,255,255,.42), rgba(255,255,255,0)); pointer-events: none; }
+    .go::after { content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none; opacity: 0; transition: opacity .25s;
+      background: radial-gradient(160px circle at var(--bx, 50%) var(--by, 50%), rgba(255,255,255,.35), transparent 60%); }
+    .go:hover { filter: brightness(1.08) saturate(1.1); }
+    @supports (background: color-mix(in srgb, red 50%, transparent)) {
+      .go { background: linear-gradient(180deg, rgba(255,255,255,.26), rgba(255,255,255,.05) 52%, rgba(255,255,255,.12)),
+          linear-gradient(115deg, color-mix(in srgb, var(--glow-1) 78%, transparent), color-mix(in srgb, var(--glow-2) 62%, transparent));
+        box-shadow: inset 0 1px 0 rgba(255,255,255,.55), inset 0 -8px 18px rgba(0,0,0,.14), inset 0 0 0 1px rgba(255,255,255,.06),
+          0 10px 26px -10px color-mix(in srgb, var(--glow-1) 85%, transparent), 0 2px 8px rgba(0,0,0,.25); }
+      .go:hover { box-shadow: inset 0 1px 0 rgba(255,255,255,.65), inset 0 -8px 18px rgba(0,0,0,.12),
+          0 14px 32px -10px color-mix(in srgb, var(--glow-1) 95%, transparent), 0 2px 8px rgba(0,0,0,.25); }
+    }
+    .go:hover::after { opacity: 1; }
+    .go:active { transform: translateY(1px) scale(.99); }
+    .go:focus-visible { outline: 2px solid rgba(255,255,255,.85); outline-offset: 3px; }
+    .go:disabled { opacity: .65; cursor: progress; }
     .err { min-height: 18px; font-size: 13px; color: var(--serious); }
   </style>
 </head>
@@ -123,6 +151,9 @@
       }, { passive: true });
       document.addEventListener("pointerleave", function () { form.style.transform = ""; });
 
+      var go = document.getElementById("btnsubmit");
+      go.addEventListener("pointermove", function (e) { var r = go.getBoundingClientRect(), z = document.documentElement.currentCSSZoom || 1;
+        go.style.setProperty("--bx", (e.clientX - r.left) / z + "px"); go.style.setProperty("--by", (e.clientY - r.top) / z + "px"); });
       form.addEventListener("submit", function (e) {
         e.preventDefault();
         var u = document.getElementById("basic-username").value, p = document.getElementById("basic-password").value;

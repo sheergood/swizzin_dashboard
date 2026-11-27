@@ -85,7 +85,7 @@
     s.setProperty("--glow-1", p.g1); s.setProperty("--glow-2", p.g2); s.setProperty("--glow-3", p.g3); s.setProperty("--glow-4", p.g4);
     s.setProperty("--glass-tint", p.tint.toFixed(3)); s.setProperty("--stars", p.stars.toFixed(3));
     root.dataset.skyphase = el < -6 ? "night" : el < 8 ? "twilight" : "day";
-    current = { elevation: el, phase: mode === "auto" ? phaseName(el, evening) : mode[0].toUpperCase() + mode.slice(1), stars: p.stars, source: loc.source, mode };
+    current = { elevation: el, phase: mode === "auto" ? phaseName(el, evening) : mode === "day" ? "Light" : "Dark", stars: p.stars, source: loc.source, mode };
     document.dispatchEvent(new CustomEvent("swz-sky", { detail: current }));
     if (wake) wake();
     if (!painted) {   // first paint: no 6 s glide from the default colours; later changes glide

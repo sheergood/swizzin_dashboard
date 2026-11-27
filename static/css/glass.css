@@ -611,11 +611,14 @@ a.app-name:hover { text-decoration: underline; text-underline-offset: 3px; }
      light blobs become a static version of the same gradient */
   .glass::before, .glass::after { content: none; }
   .blob, .grain, #sky { display: none; }
+  .ambient { background: linear-gradient(180deg, var(--sky-top), var(--sky-mid) 55%, var(--sky-low)); }
+  @supports (background: color-mix(in srgb, red 50%, transparent)) {
   .ambient { background:
       radial-gradient(40% 50% at 12% 8%, color-mix(in srgb, var(--glow-1) 40%, transparent), transparent 70%),
       radial-gradient(35% 45% at 92% 28%, color-mix(in srgb, var(--glow-2) 35%, transparent), transparent 70%),
       radial-gradient(40% 45% at 45% 100%, color-mix(in srgb, var(--glow-3) 28%, transparent), transparent 70%),
       linear-gradient(180deg, var(--sky-top), var(--sky-mid) 55%, var(--sky-low)); }
+  }
   .glass { background: linear-gradient(rgba(6, 10, 24, var(--glass-tint)), rgba(6, 10, 24, var(--glass-tint))),
       linear-gradient(135deg, rgba(58, 66, 98, .78) 0%, rgba(30, 35, 54, .82) 45%, rgba(40, 46, 70, .8) 100%); }
   .pop, .dropdown, .tooltip, .toast { background: rgba(22, 25, 38, .96); }

@@ -141,11 +141,21 @@ function wxIcon(code, isDay = true, set = 'glass', size = 48, moon = null) {
 
 document.head.insertAdjacentHTML("beforeend", `<style>${WX_CSS}</style>`);
 
-/* Moon phase for night icons: age 0–1 (0 new, .5 full) from a known new moon; illum = lit fraction. */
-function moonNow(lat) {
-  const SYN = 29.530588853, ref = Date.UTC(2000, 0, 6, 18, 14) / 86400000;
-  const age = ((((Date.now() / 86400000 - ref) / SYN) % 1) + 1) % 1;
-  return { age, illum: (1 - Math.cos(2 * Math.PI * age)) / 2, up: true, south: lat != null && lat < 0 };
+/* Moon phase for night icons (Meeus, Astronomical Algorithms ch. 48): phase angle from the Moon's mean
+   elongation and the Sun/Moon anomalies with the main periodic terms — about 1 % accurate in lit fraction
+   (a plain mean synodic month drifts by up to ~0.7 days because lunations vary in length).
+   age 0–1 (0 new, .5 full), illum = lit fraction. */
+function moonNow(lat, when) {
+  const rad = Math.PI / 180, T = ((when || Date.now()) / 86400000 + 2440587.5 - 2451545) / 36525;
+  const nrm = (x) => ((x % 360) + 360) % 360;
+  const D = nrm(297.8501921 + 445267.1114034 * T - 0.0018819 * T * T);
+  const M = nrm(357.5291092 + 35999.0502909 * T - 0.0001536 * T * T);
+  const Mp = nrm(134.9633964 + 477198.8675055 * T + 0.0087414 * T * T);
+  let i = 180 - D - 6.289 * Math.sin(Mp * rad) + 2.1 * Math.sin(M * rad) - 1.274 * Math.sin((2 * D - Mp) * rad)
+    - 0.658 * Math.sin(2 * D * rad) - 0.214 * Math.sin(2 * Mp * rad) - 0.11 * Math.sin(D * rad);
+  i = nrm(i);                                  // phase angle (180 at new moon, 0 at full)
+  const elong = nrm(180 - i);                  // elongation: 0 = new, 90 = first quarter, 180 = full, 270 = last quarter
+  return { age: elong / 360, illum: (1 + Math.cos(i * rad)) / 2, up: true, south: lat != null && lat < 0 };
 }
 const MOON_NAMES = [[.0339, "New moon"], [.216, "Waxing crescent"], [.284, "First quarter"], [.466, "Waxing gibbous"],
   [.534, "Full moon"], [.716, "Waning gibbous"], [.784, "Last quarter"], [.966, "Waning crescent"], [1.01, "New moon"]];

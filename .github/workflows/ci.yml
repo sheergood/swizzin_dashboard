@@ -22,5 +22,7 @@ jobs:
         run: vermin --no-tips -t=3.6- --violations swizzin.py core/*.py
       - name: javascript syntax
         run: node --check static/js/glass.js
+      - name: unit tests (SMART units, RAID parsing, traffic totals, failure handling)
+        run: python -m unittest tests.test_core -v
       - name: smoke test every page and API
         run: sudo mkdir -p /install && python tests/smoke.py

@@ -3,6 +3,43 @@
 Fork of [liaralabs/swizzin_dashboard](https://github.com/liaralabs/swizzin_dashboard), tuned for
 seedbox servers. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [sheergood-2] — Nov 27 2026
+
+### Changed
+- **Sign in button** is now liquid glass: a translucent, blurred pill tinted by the live sky
+  (indigo at night, rose/gold at dawn and dusk, azure by day), with a specular highlight across
+  the top and a soft light that follows the pointer.
+- Sky menu labels are now **Auto · Light · Dark** (were Auto · Day · Night). Saved choices carry
+  over unchanged.
+
+### Fixed
+- **Moon phase accuracy** — the weather icon's moon now uses Meeus' lunar formulas; the lit
+  fraction is within 0.2 % of the JPL-based `ephem` library (the old approximation was off by up
+  to 9 %), and waxing/waning is always right.
+- Browsers without `color-mix()` (Safari < 16.2, Firefox < 113, older TV browsers) now get a plain
+  sky gradient and a solid glass button instead of a blank background. Previously the whole
+  `background` declaration was dropped there, because a `var()` inside an unsupported function
+  does not fall back to an earlier declaration.
+- The Applications list no longer depends on `replaceChildren()` (Safari < 14).
+
+### Verified (production audit)
+- **Calculations** cross-checked against `psutil` on a loaded machine: CPU total and per core,
+  iowait, memory, network counters, disk read/write MB/s and busy %, per-process CPU % and the
+  process count all agree. Sun elevation matches `astral` to 0.01°.
+- **Unit tests** (`tests/test_core.py`, now in CI): NVMe data units (×512 000 bytes), SATA
+  `Total_LBAs_Written` with 512 B and 4 KiB sectors, vendor GiB / 32 MiB counters, wear attribute
+  priority, HDD attribute states; mdstat with inactive, spare, failed, `resync=PENDING`,
+  `auto-read-only`, rebuilding RAID 1 and resyncing RAID 5 arrays; vnstat 1.x (KiB) and 2.x
+  totals for today, yesterday, this week (from Monday), last 7 days, month, all time and the last
+  24 hours; and graceful "unavailable" results for a missing vnstat, a missing or corrupt
+  `/proc/mdstat`, SMART JSON or fail2ban JSON.
+- **Load test**: 3 600 concurrent API requests (8 clients) with 0 errors, median 9 ms, p95 under
+  100 ms; panel memory steady at ~66 MiB. Unauthenticated callers are still rate-limited (429).
+- **2-hour browser soak**: DOM node count flat after the first fill, JS heap ~2.5 MiB, every
+  history buffer capped, no script errors.
+- Layout re-checked on 30 screens from a 360 px phone to native 8K: no clipped or off-screen
+  content.
+
 ## [sheergood-1] — Nov 26 2026
 
 ### Production safety

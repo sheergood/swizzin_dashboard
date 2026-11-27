@@ -192,7 +192,7 @@
     const SRC = { device: "this device's location", server: "the server's location", timezone: "your time zone (no location yet)" };
     const paintSkyMenu = (st) => {
       $("skyPhase").textContent = st.phase + (st.mode === "auto" ? ` · sun ${st.elevation >= 0 ? "+" : ""}${Math.round(st.elevation)}°` : "");
-      $("skySrc").textContent = st.mode === "auto" ? `Auto follows the sun at ${SRC[st.source] || st.source}; updates every minute.` : "Fixed sky. Choose Auto to follow the real sun.";
+      $("skySrc").textContent = st.mode === "auto" ? `Auto follows the sun at ${SRC[st.source] || st.source}; updates every minute.` : `Always ${st.mode === "day" ? "light" : "dark"}. Choose Auto to follow the real sun.`;
       document.querySelectorAll(".sky-seg [data-skymode]").forEach((b) => { const on = b.dataset.skymode === st.mode; b.setAttribute("aria-selected", String(on)); b.setAttribute("aria-checked", String(on)); });
     };
     document.addEventListener("swz-sky", (e) => paintSkyMenu(e.detail));
@@ -951,7 +951,8 @@
     const box = $("apps"), want = list.map(appCard);
     // only touch the DOM order when the visible set changed (filtering); otherwise just repaint states
     if (box.children.length !== want.length || want.some((c, i) => box.children[i] !== c)) {
-      box.replaceChildren(...want);
+      if (box.replaceChildren) box.replaceChildren(...want);
+      else { box.textContent = ""; want.forEach((c) => box.appendChild(c)); }   // Safari < 14, old TV browsers
       if (!want.length) box.innerHTML = `<div class="empty">No matching applications</div>`;
     }
     list.forEach((a) => paintApp(appCard(a), a));
