@@ -3,6 +3,14 @@
 Fork of [liaralabs/swizzin_dashboard](https://github.com/liaralabs/swizzin_dashboard), tuned for
 seedbox servers. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [sheergood-10] — Nov 27 2026
+
+### Added
+- **Country flags.** The IP address card, its popover and the speed test's M-Lab server now show the
+  country's flag. Flags are bundled SVGs (`static/img/flags`, from flag-icons 7.6.0, MIT; checked for
+  scripts and external links) rather than emoji, which Windows shows as two plain letters. If a flag
+  ever fails to load, the country-code chip takes its place.
+
 ## [sheergood-9] — Nov 27 2026
 
 ### Added

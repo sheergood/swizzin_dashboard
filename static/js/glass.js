@@ -4,7 +4,20 @@
   const S = window.SWZ;
   const $ = (id) => document.getElementById(id);
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-  const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+
+  /* Country flag as a bundled SVG (static/img/flags, from flag-icons, MIT): Windows shows flag emoji
+     as two plain letters. If a flag file is ever missing, the country code chip takes its place. */
+  const flagHTML = (cc, name) => S.flags && /^[A-Za-z]{2}$/.test(cc || "")
+    ? `<img class="flag" src="${esc(S.flags + cc.toLowerCase())}.svg" width="18" height="13" alt="${esc(name || cc.toUpperCase())}" title="${esc(name || cc.toUpperCase())}" data-cc="${esc(cc.toUpperCase())}">`
+    : "";
+  document.addEventListener("error", (e) => {
+    const im = e.target;
+    if (im && im.classList && im.classList.contains("flag")) {
+      const chip = document.createElement("span");
+      chip.className = "cc"; chip.textContent = im.dataset.cc || ""; chip.title = im.title;
+      im.replaceWith(chip);
+    }
+  }, true);  const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
   const HISTORY = 90;           // points kept (90 × 2 s = 3 min)
   const LIVE_MS = 2000;
 
@@ -639,8 +652,7 @@
     const setIp = (id, v) => { const el = $(id); el.textContent = v || "Not available"; el.classList.toggle("none", !v); el.title = v || "";
       el.nextElementSibling.hidden = !v; };
     setIp("ip4", pub.v4); setIp("ip4b", pub.v4); setIp("ip6", pub.v6);
-    // country code chip instead of a flag emoji: Windows renders flag emoji as plain letters
-    const where = g.city ? `${g.cc ? `<span class="cc">${esc(g.cc)}</span>` : ""}${esc(g.city)}` : "";
+    const where = g.city ? `${flagHTML(g.cc, g.country)}${esc(g.city)}` : "";
     $("ipWhere").innerHTML = where; $("ipWhere2").innerHTML = g.city ? `${where}, ${esc(g.country || g.cc)}` : "";
     const rows = [];
     // only show interface addresses when they differ from the public ones (NAT / extra IPs)
@@ -818,11 +830,11 @@
       const step = st.phase === "upload" ? 2 : st.phase === "download" ? 1 : 0;
       h += `<span class="st-run" role="status">${esc(PHASE[st.phase] || "Starting…")}${live}</span>
         <span class="st-steps" aria-hidden="true"><i class="${step === 1 ? "now" : step > 1 ? "on" : ""}"></i><i class="${step === 2 ? "now" : ""}"></i></span>`;
-      if (st.server && st.server.city) h += `<small>M-Lab ${esc([st.server.city, st.server.country].filter(Boolean).join(", "))}</small>`;
+      if (st.server && st.server.city) h += `<small>${flagHTML(st.server.country)}M-Lab ${esc([st.server.city, st.server.country].filter(Boolean).join(", "))}</small>`;
     } else if (last) {
       h += `<span class="st-res"><span title="Download">↓ ${esc(mbit(last.download))}</span><span title="Upload">↑ ${esc(mbit(last.upload))}</span>` +
         (last.latency_ms != null ? `<span title="Lowest round-trip time to the M-Lab server">${esc(last.latency_ms)} ms ping</span>` : "") + `</span>
-        <small>M-Lab${where ? " " + esc(where) : ""} · ${esc(ago(Math.max(0, Date.now() / 1000 - last.at)))}` +
+        <small>${last.server ? flagHTML(last.server.country) : ""}M-Lab${where ? " " + esc(where) : ""} · ${esc(ago(Math.max(0, Date.now() / 1000 - last.at)))}` +
         (portMbps && last.download ? ` · ${Math.round(Math.min(last.download, portMbps) / portMbps * 100)}% of the port` : "") + `</small>`;
     } else if (st) h += `<span class="muted">Not run yet</span>`;
     else h += `<span class="muted">…</span>`;

@@ -311,6 +311,7 @@
       user: {{ user|tojson }},
       pages: {{ pages|tojson }},
       iconBase: {{ url_for('static', filename='img/apps/')|tojson }},
+      flags: {{ url_for('static', filename='img/flags/')|tojson }},
       api: {
         live: {{ url_for('api_live')|tojson }},
         system: {{ url_for('api_system')|tojson }},
