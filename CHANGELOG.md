@@ -3,6 +3,15 @@
 Fork of [liaralabs/swizzin_dashboard](https://github.com/liaralabs/swizzin_dashboard), tuned for
 seedbox servers. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [sheergood-14] — Nov 28 2026
+
+### Fixed
+- **`/auth/check` is back, rate limited.** FileBrowser Quantum setups from before its own login
+  page (Nov 27) use it, and the upgrade to the new setup rolls back to them if it fails; without
+  it Quantum would have been unreachable after such a rollback. Unlike before, it is not exempt
+  from rate limiting: a correct login passes freely, wrong ones are limited like the login page
+  (verified: 5 wrong tries, then HTTP 429).
+
 ## [sheergood-13] — Nov 28 2026
 
 ### Removed

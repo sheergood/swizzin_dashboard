@@ -647,6 +647,24 @@ def network_quota(user):
     return flask.jsonify({"nettotal": total, "netused": used, "netfree": free, "perutil": usage})
 
 
+@app.route('/auth/check')
+def auth_check():
+    """Kept for FileBrowser Quantum setups from before its own login page (config v3, Nov 27 2026):
+    their nginx asks here, with auth_request, whether the browser's saved swizzin login is valid.
+    `box update` moves such servers to v4, which doesn't use this; it stays so a v4 move that fails and
+    rolls back still works. Not exempt from rate limiting: only a correct login passes freely (see
+    check_authorization), so it can't be used to guess passwords faster than the login page."""
+    a = flask.request.authorization
+    if not _valid_basic():
+        return flask.Response("", 401)
+    required = flask.request.headers.get('X-Swizzin-Require-User')
+    if required and a.username != required:
+        return flask.Response("", 403)
+    r = flask.Response("", 200)
+    r.headers['X-Swizzin-User'] = a.username
+    r.headers['Cache-Control'] = 'no-store'
+    return r
+
 @app.route('/login')
 def login():
     return flask.render_template('login.html', title='swizzin login')

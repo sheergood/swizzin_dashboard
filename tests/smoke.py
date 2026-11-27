@@ -43,8 +43,12 @@ bad += r.status_code != 403
 xhr = dict(auth, **{"X-Requested-With": "XMLHttpRequest"})
 wrong = {"Authorization": "Basic " + base64.b64encode(b"smoke:nope").decode()}
 checks = []
-# the old /auth/check password oracle is gone
-checks.append(("GET /auth/check removed", client.get("/auth/check", headers=wrong).status_code, 404))
+# /auth/check is kept (rate limited) for FileBrowser Quantum setups from before v4
+# /auth/check (older FileBrowser Quantum setups): right login 200 + user, wrong login 401, other user 403
+r = client.get("/auth/check", headers=auth)
+checks.append(("GET /auth/check right login", (r.status_code, r.headers.get("X-Swizzin-User")), (200, "smoke")))
+checks.append(("GET /auth/check wrong login", client.get("/auth/check", headers=wrong).status_code, 401))
+checks.append(("GET /auth/check not the app's user", client.get("/auth/check", headers=dict(auth, **{"X-Swizzin-Require-User": "someone"})).status_code, 403))
 # rate limiter: only a VALID login is exempt (any Authorization header used to be)
 with swizzin.app.test_request_context("/", headers=wrong):
     checks.append(("wrong login is rate limited", swizzin.check_authorization(), False))
