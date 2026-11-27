@@ -222,19 +222,13 @@
     sys = await getJSON(S.api.system);
     threads = sys.cpu_threads || 1;
     $("host").textContent = sys.hostname;
-    const osShort = (sys.os || "").replace(/ GNU\/Linux/, "").replace(/^Ubuntu (\d+\.\d+)(\.\d+)? LTS$/, "Ubuntu $1 LTS");
-    if ($("hostOs")) { $("hostOs").textContent = osShort ? " — " + osShort : ""; $("sysline").textContent = `Kernel ${sys.kernel} · ${sys.arch}`; }
-    else $("sysline").textContent = `${sys.os} · ${sys.kernel}`;
+    if ($("sysline")) $("sysline").textContent = `${sys.os} · ${sys.kernel}`;   // non-admin header
     document.title = `${sys.hostname} · swizzin`;
     $("cpuModel").textContent = `${sys.cpu_model} · ${sys.cpu_cores} cores / ${sys.cpu_threads} threads${sys.cpu_max_mhz ? " · up to " + (sys.cpu_max_mhz / 1000).toFixed(2) + " GHz" : ""}`;
     $("loadThreads").textContent = `${threads} threads`;
     const link = sys.link_speed && sys.link_speed > 0 ? (sys.link_speed >= 1000 ? sys.link_speed / 1000 + " Gbit" : sys.link_speed + " Mbit") : "–";
     $("netLink").textContent = `link ${link}`;
     $("netCc").textContent = [sys.tcp_cc, sys.qdisc].filter(Boolean).join(" · ") || "–";
-    $("chips").innerHTML = [
-      ["CPU", sys.cpu_model.replace(/\(R\)|\(TM\)|CPU|Processor|@.*$/g, "").replace(/\s+/g, " ").trim()],
-      ["TCP", sys.tcp_cc], ["Link", link], ["Arch", sys.arch],
-    ].filter((c) => c[1]).map((c) => `<span class="chip">${esc(c[0])} <b>${esc(c[1])}</b></span>`).join("");
   }
 
   function renderLive(d) {
@@ -1042,39 +1036,6 @@
     setInterval(() => { loadPlex.recheck = true; }, 60000);
   }
 
-  /* ============================================================ compact layout
-     Tighter spacing, and cards packed like masonry so a short card never leaves a hole beside a tall
-     one. Each card spans as many 4px grid rows as its height needs; a ResizeObserver keeps that in
-     step as content changes. Off by default. */
-  const grid = $("grid");
-  let packObs = null;
-  function packCard(el) {
-    if (el.hidden || getComputedStyle(el).display === "none") return;
-    el.style.gridRowEnd = "auto";
-    const h = el.getBoundingClientRect().height / zoom();
-    el.style.gridRowEnd = "span " + Math.max(1, Math.ceil((h + 12) / 4));    // + the 12 px gap below it
-  }
-  function setCompact(on) {
-    document.documentElement.classList.toggle("compact", on);
-    $("optCompact").checked = on;
-    const cards = [...grid.children].filter((c) => c.matches("section, .statusbar"));
-    if (on) {
-      if (!packObs && "ResizeObserver" in window) {
-        packObs = new ResizeObserver((ents) => requestAnimationFrame(() => ents.forEach((e) => packCard(e.target))));
-      }
-      cards.forEach((c) => { packCard(c); if (packObs) packObs.observe(c); });
-    } else {
-      if (packObs) { packObs.disconnect(); packObs = null; }
-      cards.forEach((c) => { c.style.gridRowEnd = ""; });
-    }
-    setTimeout(() => window.dispatchEvent(new Event("resize")), 50);   // charts re-measure
-  }
-  $("optCompact").addEventListener("change", (e) => { store.set("compact", e.target.checked ? "on" : "off"); setCompact(e.target.checked); });
-  // cards that appear later (GPU, Plex) or change size are packed by the observer; hidden ones take no rows
-  new MutationObserver(() => { if (document.documentElement.classList.contains("compact")) [...grid.children].forEach((c) => c.matches("section") && packCard(c)); })
-    .observe(grid, { subtree: false, childList: true, attributes: true, attributeFilter: ["hidden"] });
-  addEventListener("resize", () => { if (document.documentElement.classList.contains("compact")) [...grid.children].forEach((c) => c.matches("section, .statusbar") && packCard(c)); });
-
   /* ============================================================ apps */
   let statusMap = {};
   const apps = S.pages.slice().sort((a, b) => a.pretty_name.localeCompare(b.pretty_name));
@@ -1169,7 +1130,6 @@
     run(); return () => clearTimeout(t);
   }
   renderApps();
-  if (store.get("compact", "off") === "on") requestAnimationFrame(() => setCompact(true));
   every(10000, loadStatus);
   if (S.quota) every(60000, loadQuota);
   if (S.admin) {

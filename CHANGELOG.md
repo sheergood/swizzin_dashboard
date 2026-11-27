@@ -3,6 +3,19 @@
 Fork of [liaralabs/swizzin_dashboard](https://github.com/liaralabs/swizzin_dashboard), tuned for
 seedbox servers. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [sheergood-4] — Nov 27 2026
+
+### Changed
+- Header shows only the hostname and a **Specs** button; the CPU / TCP / Link / Arch chips are gone
+  (all of that is in the specs popover). The user menu stays on the right.
+- Popovers (specs, time, IP, weather, drives) are frosted glass again in every theme instead of
+  near-opaque panels; they stay solid only where the browser can't blur (old browsers, native 8K).
+- Scrollbars everywhere are slim and rounded with no arrow buttons; the specs popover no longer
+  shows a horizontal scrollbar.
+
+### Removed
+- Compact layout: it left too many gaps. A saved "compact" setting is cleared automatically.
+
 ## [sheergood-3] — Nov 27 2026
 
 ### Added
@@ -26,8 +39,6 @@ seedbox servers. Format follows [Keep a Changelog](https://keepachangelog.com/en
   Transcode (HW) with the reason (e.g. `video hevc → h264`, subtitles burned in). Polls the local
   Plex server every 5 s while visible; the token stays on the server. `PLEX_URL` and `PLEX_TOKEN` in
   swizzin.cfg override the defaults.
-- **Compact layout** (menu → Compact layout): tighter spacing and masonry packing, so short cards
-  fill the gaps beside tall ones instead of leaving blank space.
 - The swizzin mark in the sidebar sits on a small drop of liquid glass tinted by the sky or theme.
 - FileBrowser Quantum (`box install fbquantum`) appears in the apps list with its icon.
 

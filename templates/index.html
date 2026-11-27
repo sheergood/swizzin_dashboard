@@ -6,9 +6,9 @@
   <meta name="color-scheme" content="dark">
   <meta name="theme-color" content="#07080d">
   <script>/* pick the theme before first paint so Light never flashes dark */
-    try { var m = localStorage.getItem("swz.sky"), c = localStorage.getItem("swz.compact");
+    try { var m = localStorage.getItem("swz.sky");
       document.documentElement.dataset.theme = m === "day" ? "light" : m === "night" ? "dark" : "sky";
-      if (c === "on") document.documentElement.classList.add("compact"); } catch (e) {}</script>
+      localStorage.removeItem("swz.compact"); } catch (e) {}</script>
   <title>{{ title }}</title>
   <link rel="shortcut icon" href="{{ url_for('static', filename='img/favicon/favicon.ico') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/glass.css') }}">
@@ -51,8 +51,8 @@
     <button class="icon-btn hamburger" id="sideOpen" aria-label="Open apps menu"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
     {% if admin %}
     <button class="brand brand-btn" data-pop="popSpecs" aria-haspopup="dialog" aria-expanded="false" title="Server specifications">
-      <span class="host"><span id="host">swizzin</span><span class="host-os" id="hostOs"></span></span>
-      <span class="sub"><span id="sysline">{{ user }}</span><span class="specs-hint">Specs <span class="caret">▾</span></span></span>
+      <span class="host" id="host">swizzin</span>
+      <span class="specs-hint">Specs <span class="caret">▾</span></span>
     </button>
     {% else %}
     <div class="brand">
@@ -62,7 +62,6 @@
       </div>
     </div>
     {% endif %}
-    <div class="chips" id="chips"></div>
     <nav class="menu">
       <button class="pill" id="menuBtn" aria-haspopup="true" aria-expanded="false">{{ user }} <span class="caret">▾</span></button>
       <div class="dropdown glass" id="menu" hidden>
@@ -76,7 +75,6 @@
           <div class="muted menu-sky-src" id="skySrc"></div>
         </div>
         <hr>
-        <label class="row-toggle"><span>Compact layout</span><input type="checkbox" id="optCompact"><i></i></label>
         <label class="row-toggle"><span>Liquid refraction</span><input type="checkbox" id="optRefraction" checked><i></i></label>
         <label class="row-toggle"><span>Ambient motion</span><input type="checkbox" id="optMotion" checked><i></i></label>
         <hr>

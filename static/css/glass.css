@@ -123,7 +123,7 @@ body { padding-left: calc(var(--edge) + var(--side-w) + 18px); transition: paddi
 .side-head { display: flex; align-items: center; gap: 12px; padding: 6px 8px 14px; border-bottom: 1px solid var(--line); margin-bottom: 8px; }
 .side-logo { width: 30px; height: 30px; border-radius: 9px; flex: none; }
 .side-title { font-weight: 700; font-size: 16px; letter-spacing: .01em; }
-.side-list { flex: 1; overflow-y: auto; overflow-x: hidden; display: flex; flex-direction: column; gap: 2px; margin: 0 -4px; padding: 0 4px; scrollbar-width: thin; }
+.side-list { flex: 1; overflow-y: auto; overflow-x: hidden; display: flex; flex-direction: column; gap: 2px; margin: 0 -4px; padding: 0 4px; }
 .side-item { position: relative; display: flex; align-items: center; gap: 12px; padding: 7px 8px; border-radius: 13px; text-decoration: none; color: var(--ink);
   transition: background .2s; min-height: 44px; }
 .side-item:hover { background: rgba(var(--hl), .08); }
@@ -165,11 +165,7 @@ html[data-side="mini"] .side-item, html[data-side="mini"] .side-toggle { justify
 .brand-mark { width: 28px; height: 28px; border-radius: 8px; }
 .host { font-weight: 700; font-size: 16px; letter-spacing: .01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sub { color: var(--ink-2); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.chips { display: flex; gap: 8px; flex-wrap: wrap; flex: 0 1 auto; justify-content: center; min-width: 0; }
-.chip { font-size: 12px; color: var(--ink-2); padding: 5px 11px; border-radius: 999px; background: rgba(var(--hl), .06);
-  border: 1px solid var(--line); white-space: nowrap; }
-.chip b { color: var(--ink); font-weight: 600; }
-.menu { position: relative; }
+.menu { position: relative; margin-left: auto; flex: none; }
 .pill { font: inherit; color: var(--ink); background: rgba(var(--hl), .08); border: 1px solid var(--glass-edge);
   padding: 7px 14px; border-radius: 999px; cursor: pointer; white-space: nowrap; }
 .pill:hover { background: rgba(255,255,255,.14); }
@@ -206,7 +202,7 @@ html[data-side="mini"] .side-item, html[data-side="mini"] .side-toggle { justify
 [data-span="7"]  { grid-column: span 7; }
 [data-span="12"] { grid-column: span 12; }
 @media (max-width: 1200px) { [data-span="3"] { grid-column: span 6; } [data-span="5"], [data-span="7"], [data-span="4"] { grid-column: span 12; } }
-@media (max-width: 640px)  { [data-span="3"] { grid-column: span 12; } .chips { display: none; } .topbar { border-radius: 22px; } }
+@media (max-width: 640px)  { [data-span="3"] { grid-column: span 12; } .topbar { border-radius: 22px; } }
 
 /* ---------------------------------------------------------------- tiles */
 .tile { padding: 16px 18px; display: flex; flex-direction: column; gap: 10px; min-height: 196px; }
@@ -262,7 +258,8 @@ html[data-side="mini"] .side-item, html[data-side="mini"] .side-toggle { justify
 .locate[aria-pressed="true"] { color: #fff; background: var(--s1); border-color: transparent; box-shadow: 0 0 12px rgba(51,140,237,.6); }
 .locate.busy svg { animation: spin 1s linear infinite; }
 .copy.done { color: var(--good); }
-.pop { position: absolute; z-index: 40; width: min(340px, calc(100vw - 24px)); padding: 14px 16px; border-radius: 18px; background: rgba(20,22,34,.82);
+.pop { position: absolute; z-index: 40; width: min(340px, calc(100vw - 24px)); padding: 14px 16px; border-radius: 18px; background: rgba(16,20,34,.56);
+  -webkit-backdrop-filter: blur(26px) saturate(175%); backdrop-filter: blur(26px) saturate(175%);
   display: flex; flex-direction: column; gap: 10px; }
 .pop-head { display: flex; justify-content: space-between; gap: 10px; align-items: center; font-size: 12.5px; }
 .pop-big { font-size: 15px; font-weight: 600; }
@@ -293,7 +290,7 @@ html[data-side="mini"] .side-item, html[data-side="mini"] .side-toggle { justify
 #memCard .bar { height: 6px; }
 #memCard .legend-inline { margin-top: 2px; font-size: 11.5px; }
 #memCard .sub-head { margin-top: 0; font-size: 11px; }
-#mounts { max-height: 172px; overflow-y: auto; margin-right: -6px; padding-right: 6px; scrollbar-width: thin; }
+#mounts { max-height: 172px; overflow-y: auto; margin-right: -6px; padding-right: 6px; }
 #memCard .sensors .badge { font-size: 11px; padding: 2px 8px; }
 
 /* fail2ban */
@@ -430,7 +427,7 @@ html[data-side="mini"] .side-item, html[data-side="mini"] .side-toggle { justify
   padding: 6px 8px; border-radius: 10px; }
 .proc-row:not(.proc-head):hover { background: rgba(var(--hl), .06); }
 .proc-head { color: var(--ink-3); font-size: 10.5px; text-transform: uppercase; letter-spacing: .07em; font-weight: 600; border-bottom: 1px solid var(--line); border-radius: 0; }
-#procs { max-height: 420px; overflow-y: auto; scrollbar-width: thin; }
+#procs { max-height: 420px; overflow-y: auto; }
 .proc-row .num { text-align: right; font-variant-numeric: tabular-nums; }
 .proc-row .mono { font-family: var(--mono); font-size: 12px; color: var(--ink-2); }
 .pname { min-width: 0; display: flex; align-items: baseline; gap: 8px; }
@@ -486,7 +483,7 @@ html[data-side="mini"] .side-item, html[data-side="mini"] .side-toggle { justify
   .drive-row .dr-busy, .drive-row .dr-io { display: none; }
 }
 @media (max-width: 640px) { .disk-totals { display: none; } }
-.pop-wide { width: min(560px, calc(100vw - 24px)); max-height: min(70vh, 640px); overflow: auto; }
+.pop-wide { width: min(560px, calc(100vw - 24px)); max-height: min(70vh, 640px); overflow-x: hidden; overflow-y: auto; overscroll-behavior: contain; }
 .pop .metrics { grid-template-columns: repeat(3, 1fr); }
 
 /* drives */
@@ -678,8 +675,11 @@ html[data-theme="light"] .blob { mix-blend-mode: multiply; opacity: .5; }
 html[data-theme="light"] .grain { opacity: .035; }
 html[data-theme="dark"] .blob { opacity: .4; }
 /* solid-ish surfaces that float over everything */
-html[data-theme="light"] .pop, html[data-theme="light"] .dropdown, html[data-theme="light"] .tooltip, html[data-theme="light"] .toast,
-html[data-theme="dark"] .pop, html[data-theme="dark"] .dropdown, html[data-theme="dark"] .tooltip, html[data-theme="dark"] .toast { background: var(--surface-solid); }
+html[data-theme="light"] .tooltip, html[data-theme="light"] .toast,
+html[data-theme="dark"] .tooltip, html[data-theme="dark"] .toast { background: var(--surface-solid); }
+/* popovers and the menu stay frosted glass in every theme */
+html[data-theme="light"] .pop, html[data-theme="light"] .dropdown { background: rgba(255,255,255,.66); }
+html[data-theme="dark"] .pop, html[data-theme="dark"] .dropdown { background: rgba(26,37,49,.6); }
 /* accent: navigation and selection in green, like a classic admin console */
 html[data-theme="light"] .side-item.active, html[data-theme="dark"] .side-item.active { background: var(--accent-soft); box-shadow: none; color: var(--accent-ink); }
 html[data-theme="light"] .side-item.active .side-ico, html[data-theme="dark"] .side-item.active .side-ico { background: var(--accent); color: #fff; }
@@ -696,10 +696,16 @@ html[data-theme="light"] .side-dot { border-color: #fff; }
 html[data-theme="light"] #sky, html[data-theme="dark"] #sky { display: none; }
 /* themes where live blur is off (no backdrop-filter support, or native 8K) need their own pre-blended fills */
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .pop, .dropdown { background: rgba(20,22,34,.97); }
+  html[data-theme="light"] .pop, html[data-theme="light"] .dropdown { background: rgba(255,255,255,.98); }
+  html[data-theme="dark"] .pop, html[data-theme="dark"] .dropdown { background: rgba(29,40,52,.98); }
   html[data-theme="light"] .glass { background: linear-gradient(135deg, rgba(255,255,255,.97), rgba(248,250,252,.96)); }
   html[data-theme="dark"] .glass { background: linear-gradient(135deg, rgba(37,51,65,.97), rgba(29,40,52,.97)); }
 }
 @media (min-width: 6000px), (min-width: 3200px) and (min-resolution: 1.75dppx) {
+  .pop, .dropdown { background: rgba(20,22,34,.96); }
+  html[data-theme="light"] .pop, html[data-theme="light"] .dropdown { background: rgba(255,255,255,.97); }
+  html[data-theme="dark"] .pop, html[data-theme="dark"] .dropdown { background: rgba(29,40,52,.97); }
   html[data-theme="light"] .glass { background: linear-gradient(135deg, rgba(255,255,255,.94) 0%, rgba(250,252,254,.9) 45%, rgba(255,255,255,.92) 100%); }
   html[data-theme="dark"] .glass { background: linear-gradient(135deg, rgba(43,58,73,.92) 0%, rgba(31,43,56,.92) 45%, rgba(38,52,66,.92) 100%); }
 }
@@ -723,43 +729,15 @@ html[data-theme="light"] .glass-logo { color: #13a376;
 html[data-theme="light"] .glass-logo svg { filter: drop-shadow(0 1px 0 rgba(255,255,255,.8)); }
 @media (min-width: 6000px), (min-width: 3200px) and (min-resolution: 1.75dppx) { .glass-logo { backdrop-filter: none; -webkit-backdrop-filter: none; } }
 
-/* ================================================================ compact layout (menu → Compact layout)
-   Tighter spacing everywhere, and the grid packs like masonry: 4 px rows, each card spanning as many as
-   its height needs (set by glass.js), dense flow so a short card fills the hole beside a tall one. */
-html.compact .grid { grid-auto-rows: 4px; row-gap: 0; column-gap: 12px; grid-auto-flow: row dense; align-items: start; }
-html.compact .grid > section, html.compact .grid > .statusbar { margin-bottom: 0; }
-html.compact .topbar { margin-bottom: 12px; padding: 8px 12px 8px 16px; }
-html.compact .card { padding: 13px 15px 15px; gap: 10px; }
-html.compact .tile { padding: 12px 14px; gap: 6px; min-height: 160px; }
-html.compact .chart { height: 150px; }
-html.compact .bars { height: 170px; }
-html.compact .card-head h2 { font-size: 15px; }
-html.compact .metrics { gap: 6px; }
-html.compact .metric { padding: 6px 8px; }
-html.compact .statusbar { padding: 4px; }
-html.compact .side-item { min-height: 38px; padding: 5px 8px; }
-html.compact .f2b-list { max-height: 210px; }
-/* wide screens: small cards share rows instead of each taking a full one */
-@media (min-width: 1500px) {
-  html.compact #gpuCard { grid-column: span 5; }
-  html.compact #memCard { grid-column: span 7; }
-}
-@media (min-width: 2000px) {
-  html.compact #f2bCard { grid-column: span 4; }
-  html.compact #memCard { grid-column: span 5; }
-  html.compact #gpuCard { grid-column: span 3; }
-}
-
 /* ---------------------------------------------------------------- header → server specs */
-.brand-btn { flex-direction: column; align-items: flex-start; justify-content: center; gap: 1px; text-align: left; font: inherit; color: inherit;
-  background: none; border: 0; padding: 4px 10px; margin: -4px -10px; border-radius: 14px; cursor: pointer; flex: 0 1 auto; max-width: 100%; }
-.brand-btn:hover, .brand-btn[aria-expanded="true"] { background: rgba(var(--hl), .07); }
+.brand-btn { flex-direction: row; align-items: center; gap: 10px; text-align: left; font: inherit; color: inherit;
+  background: none; border: 0; padding: 6px 8px 6px 10px; margin: -6px -8px -6px -10px; border-radius: 999px; cursor: pointer; flex: 0 1 auto; min-width: 0; }
+.brand-btn:hover .specs-hint, .brand-btn[aria-expanded="true"] .specs-hint { background: rgba(var(--hl), .14); }
 .brand-btn:focus-visible { outline: 2px solid var(--s1); outline-offset: 2px; }
-.brand-btn .host, .brand-btn .sub { display: block; max-width: 100%; }
-.host-os { font-weight: 500; color: var(--ink-2); }
-.specs-hint { margin-left: 8px; color: var(--s1); font-weight: 600; }
-html[data-theme="light"] .specs-hint, html[data-theme="dark"] .specs-hint { color: var(--accent-ink); }
-.specs-hint .caret { font-size: 10px; }
+.brand-btn .host { font-size: 17px; min-width: 0; }
+.specs-hint { flex: none; font-size: 12px; font-weight: 600; color: var(--ink-2); padding: 4px 11px; border-radius: 999px;
+  background: rgba(var(--hl), .07); border: 1px solid var(--line); transition: background .2s ease; }
+.specs-hint .caret { font-size: 10px; margin-left: 2px; }
 .pop-specs { width: min(620px, calc(100vw - 24px)); }
 .pop-mini { font-size: 11.5px; padding: 3px 10px; }
 .specs { display: flex; flex-direction: column; }
@@ -811,3 +789,16 @@ html[data-theme="light"] .plex-tag, html[data-theme="light"] .np-ico { color: #b
 .gpu.igpu > .drive-top, .gpu.igpu > .metrics, .gpu.igpu > .hw-note { grid-column: 1 / -1; }
 .gpu.igpu .metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 @media (max-width: 760px) { .gpu.igpu { grid-template-columns: 1fr; } .gpu.igpu .metrics { grid-template-columns: repeat(2, 1fr); } }
+
+/* ---------------------------------------------------------------- scrollbars
+   Slim, rounded, no arrow buttons, in every scroll area. Chromium/Safari use the ::-webkit pseudos
+   (setting scrollbar-width there would switch Chromium back to native bars with arrows); Firefox,
+   which has no such pseudos, gets its thin bar. */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-button { display: none; width: 0; height: 0; }
+::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(var(--hl), .22); border-radius: 8px; border: 2px solid transparent; background-clip: padding-box; }
+::-webkit-scrollbar-thumb:hover { background: rgba(var(--hl), .38); background-clip: padding-box; }
+@supports not selector(::-webkit-scrollbar) {
+  * { scrollbar-width: thin; scrollbar-color: rgba(var(--hl), .3) transparent; }
+}
