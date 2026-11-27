@@ -87,7 +87,7 @@ def parse_session(m):
         "user": user.get("title") or "Unknown",
         "device": player.get("title") or player.get("device") or player.get("product"),
         "product": player.get("product"), "platform": player.get("platform"),
-        "state": player.get("state") or "playing",
+        "state": player.get("state") if player.get("state") in ("playing", "paused", "buffering") else "playing",
         "location": "LAN" if player.get("local") in (True, "1", 1) or sess.get("location") == "lan" else "Remote",
         "relayed": player.get("relayed") in (True, "1", 1),
         "progress": round(100 * offset / duration, 1) if duration and offset is not None else None,

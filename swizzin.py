@@ -15,6 +15,9 @@ import requests
 import time
 from werkzeug.middleware.proxy_fix import ProxyFix
 import calendar
+import hashlib
+import re
+import secrets
 import logging
 
 logging.basicConfig(level=logging.WARN)
@@ -35,18 +38,62 @@ htpasswd = HtPasswdAuth(app)
 if app.config['URLBASE'] == "/":
     app.config['URLBASE'] = ""
 
+def _signing_secret():
+    """The token-signing secret must not be the public default; make one per install."""
+    if app.config.get('FLASK_SECRET') not in (None, "", "What's the password?"):
+        return app.config['FLASK_SECRET']
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '.flask_secret')
+    try:
+        with open(path) as f:
+            v = f.read().strip()
+        if len(v) >= 32:
+            return v
+    except OSError:
+        pass
+    v = secrets.token_hex(32)
+    try:
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, 'w') as f:
+            f.write(v)
+    except OSError:
+        pass   # still random for this run; tokens just don't survive a restart
+    return v
+app.config['FLASK_SECRET'] = _signing_secret()
+
 app.wsgi_app = PrefixMiddleware(app.wsgi_app, prefix=app.config['URLBASE'])
 socketio = SocketIO(app,  path='{}/socket.io'.format(app.config['URLBASE']), async_mode=async_mode)
 
 #Config rate limiting
+_auth_cache = {}
+
+def _valid_basic():
+    """True when the request carries a valid swizzin login (Basic auth). Cached 5 min per
+    login + htpasswd version: htpasswd hashes are deliberately slow and the dashboard polls."""
+    a = flask.request.authorization
+    if not a or not a.username or not a.password:
+        return False
+    try:
+        stamp = os.stat(app.config['FLASK_HTPASSWD_PATH']).st_mtime
+    except OSError:
+        stamp = 0
+    key = hashlib.sha256("{}\0{}\0{}".format(a.username, a.password, stamp).encode()).hexdigest()
+    now = time.time()
+    hit = _auth_cache.get(key)
+    if hit and now - hit[1] < 300:
+        return hit[0]
+    ok = bool(htpasswd.users.check_password(a.username, a.password))
+    if len(_auth_cache) > 512:
+        _auth_cache.clear()
+    _auth_cache[key] = (ok, now)
+    return ok
+
+#Config rate limiting
 def check_authorization():
-    if flask.request.authorization:
-        try:
-            authreq = flask.request.authorization.username 
-            return True
-        except:
-            return False
-    else:
+    # Signed-in users are never rate limited. Only a *valid* login counts: exempting any request
+    # that merely had an Authorization header let password guessing run without a limit.
+    try:
+        return _valid_basic()
+    except Exception:
         return False
 
 
@@ -67,6 +114,7 @@ import core.place as place
 import core.specs as specs
 import core.plex as plex
 import core.speedtest as speedtest
+import core.prefs as prefs
 
 #Prepare the background threads
 thread = None
@@ -183,6 +231,25 @@ def authenticate():
         )}
     )
 
+@app.after_request
+def _security_headers(r):
+    h = r.headers
+    h.setdefault('X-Frame-Options', 'SAMEORIGIN')        # no clickjacking of the service buttons
+    h.setdefault('X-Content-Type-Options', 'nosniff')
+    h.setdefault('Referrer-Policy', 'same-origin')
+    if flask.request.path.startswith(('/api/', '/apps/', '/stats/')) and r.mimetype == 'application/json':
+        h.setdefault('Cache-Control', 'no-store')
+    return r
+
+def _same_site_xhr():
+    """State-changing requests must come from our own pages. The browser attaches the saved Basic
+    login to any request, so without this another website could press our buttons; it can't add
+    X-Requested-With without a CORS preflight, which we never answer."""
+    if flask.request.headers.get('X-Requested-With') != 'XMLHttpRequest':
+        return False
+    origin = flask.request.headers.get('Origin')
+    return not origin or origin.split('://', 1)[-1] == flask.request.host
+
 #Begin routes
 @app.route('/')
 @htpasswd.required
@@ -201,7 +268,7 @@ def index(user):
         vendor = "sbio"
     else:
         vendor = "swizzin"
-    return flask.render_template('index.html', title='{user} - swizzin'.format(user=user), user=user, pages=pages, quota=quota, vendor=vendor, mounts=mounts, admin=_is_admin(user))
+    return flask.render_template('index.html', title='{user} - swizzin'.format(user=user), user=user, pages=pages, quota=quota, vendor=vendor, mounts=mounts, admin=_is_admin(user), prefs=prefs.get(app.config, user))
 
 @app.route('/classic')
 @htpasswd.required
@@ -301,9 +368,7 @@ def api_speedtest(user):
         # The browser sends cached Basic credentials with any request, so a plain cross-site form
         # could start a 2 GB transfer. Require the header only our own XHR sets (a cross-site page
         # can't add it without a CORS preflight, which we never answer) and a matching Origin.
-        origin = flask.request.headers.get('Origin')
-        if flask.request.headers.get('X-Requested-With') != 'XMLHttpRequest' or (
-                origin and origin.split('://', 1)[-1] != flask.request.host):
+        if not _same_site_xhr():
             return {"error": "forbidden"}, 403
         ok, msg = speedtest.start(app.config)
         st = speedtest.status(app.config)
@@ -311,10 +376,26 @@ def api_speedtest(user):
         return st
     return speedtest.status(app.config)
 
+@app.route('/api/prefs', methods=['GET', 'POST'])
+@htpasswd.required
+def api_prefs(user):
+    if flask.request.method == 'POST':
+        if not _same_site_xhr():
+            return flask.jsonify({"error": "forbidden"}), 403
+        data = flask.request.get_json(silent=True)
+        try:
+            return flask.jsonify(prefs.update(app.config, user, data))
+        except OSError as e:
+            app.logger.warning("couldn't save preferences: %s", e)
+            return flask.jsonify({"error": "couldn't save preferences"}), 500
+    return flask.jsonify(prefs.get(app.config, user))
+
 @socketio.on('connect', namespace='/websocket')
 def socket_connect():
     global thread
     global thread2
+    if not _valid_basic():
+        return False          # live stats are for signed-in users only
     with thread_lock:
         if thread is None:
             thread = socketio.start_background_task(current_speed, (flask.current_app._get_current_object()))
@@ -334,13 +415,15 @@ def stats(user):
 @app.route('/stats/netdata/<path:p>',methods=['GET'])
 @htpasswd.required
 def netdataproxy(user, p = ''):
+    if not _is_admin(user):
+        return flask.Response("Forbidden", 403)     # netdata shows every process and user on the box
     SITE = 'http://127.0.0.1:19999/{}'.format(p)
     if flask.request.method=='GET':
         if flask.request.args:
             querystring = flask.request.query_string.decode('utf-8')
-            resp = requests.get("{SITE}?{querystring}".format(SITE=SITE,querystring=querystring))
+            resp = requests.get("{SITE}?{querystring}".format(SITE=SITE,querystring=querystring), timeout=30)
         else:
-            resp = requests.get("{SITE}".format(SITE=SITE))
+            resp = requests.get("{SITE}".format(SITE=SITE), timeout=30)
         excluded_headers = ['content-encoding', 'content-length', 'transfer-encoding', 'connection']
         headers = [(name, value) for (name, value) in  resp.raw.headers.items() if name.lower() not in excluded_headers]
         response = flask.Response(resp.content, resp.status_code, headers)
@@ -366,31 +449,33 @@ def app_status(user):
 @app.route('/apps/service', methods=['POST'])
 @htpasswd.required
 def service(user):
-    if flask.request.method == 'POST':
-        data = flask.request.get_json()
-        application = data['application']
+    if not _same_site_xhr():
+        return flask.Response("Access denied", 403)
+    data = flask.request.get_json(silent=True) or {}
+    application, function = data.get('application'), data.get('function')
+    if function not in SERVICE_ACTIONS or not isinstance(application, str) or not re.match(r'^[a-z0-9_]{1,40}$', application):
+        return flask.Response("Bad request", 400)
+    try:
+        profile = str_to_class(application+"_meta")(user)
+    except Exception:
         try:
-            profile = str_to_class(application+"_meta")(user)
-        except:
-            try:
-                profile = str_to_class(application+"_meta")
-            except:
-                return """Application profile not found."""
-        try:
-            multiuser = profile.multiuser
-        except:
-            multiuser = False
-        if multiuser == False and user != admin_user:
-            return """Access denied"""
-        try:
-            application = profile.systemd
-        except:
-            pass
+            profile = str_to_class(application+"_meta")
+        except Exception:
+            return """Application profile not found."""
+    multiuser = getattr(profile, 'multiuser', False)
+    if multiuser == False and user != admin_user:
+        return """Access denied"""
+    unit = getattr(profile, 'systemd', application)
+    if not isinstance(unit, str):
+        unit = application
+    if unit.endswith("@"):
+        unit = unit+user
+    if not re.match(r'^[A-Za-z0-9][A-Za-z0-9@._-]{0,100}$', unit):
+        return flask.Response("Bad request", 400)
+    result = systemctl(function, unit)
+    return str(result)
 
-        if application.endswith("@"):
-            application = application+user
-        result = systemctl(data['function'], application)
-        return str(result)
+SERVICE_ACTIONS = ("start", "stop", "restart", "enable", "disable")
 
 
 @app.route('/stats/loadavg')
@@ -514,47 +599,6 @@ def network_quota(user):
         total, used, free, usage = network_quota_usage(user)
     return flask.jsonify({"nettotal": total, "netused": used, "netfree": free, "perutil": usage})
 
-
-_auth_cache = {}
-
-@app.route('/auth/check')
-def auth_check():
-    """Single sign-on for apps behind nginx (FileBrowser Quantum): nginx asks here, with
-    auth_request, whether the browser's saved swizzin login is valid. 200 + X-Swizzin-User when it
-    is, 401 when it isn't (nginx then redirects to the login page instead of a browser popup).
-    nginx names the one user the app belongs to in X-Swizzin-Require-User; anyone else gets 403.
-    Answers are cached for 5 minutes per login and htpasswd version, because apps call this for
-    every file and thumbnail and htpasswd hashes are deliberately slow."""
-    a = flask.request.authorization
-    if not a or not a.username or not a.password:
-        return flask.Response("", 401)
-    try:
-        stamp = os.stat(app.config['FLASK_HTPASSWD_PATH']).st_mtime
-    except OSError:
-        stamp = 0
-    import hashlib
-    key = hashlib.sha256("{}\0{}\0{}".format(a.username, a.password, stamp).encode()).hexdigest()
-    now = time.time()
-    hit = _auth_cache.get(key)
-    if hit and now - hit[1] < 300:
-        ok = hit[0]
-    else:
-        ok, _ = htpasswd.check_basic_auth(a.username, a.password)
-        if len(_auth_cache) > 512:
-            _auth_cache.clear()
-        _auth_cache[key] = (ok, now)
-    if not ok:
-        return flask.Response("", 401)
-    required = flask.request.headers.get('X-Swizzin-Require-User')
-    if required and a.username != required:
-        return flask.Response("", 403)
-    r = flask.Response("", 200)
-    r.headers['X-Swizzin-User'] = a.username
-    r.headers['Cache-Control'] = 'no-store'
-    return r
-
-if app.config['RATELIMIT_ENABLED'] == True:
-    limiter.exempt(auth_check)   # nginx calls it for every request of the app; it never says why a login failed
 
 @app.route('/login')
 def login():

@@ -192,12 +192,41 @@
     const SRC = { device: "this device's location", server: "the server's location", timezone: "your time zone (no location yet)" };
     const paintSkyMenu = (st) => {
       $("skyPhase").textContent = st.phase + (st.mode === "auto" ? ` · sun ${st.elevation >= 0 ? "+" : ""}${Math.round(st.elevation)}°` : "");
-      $("skySrc").textContent = st.mode === "auto" ? `Auto follows the sun at ${SRC[st.source] || st.source}; updates every minute.` : `Always ${st.mode === "day" ? "light" : "dark"}. Choose Auto to follow the real sun.`;
+      $("skySrc").textContent = st.mode === "auto" ? `${(SKY.themes().find((t) => t.key === st.theme) || {}).name || "Auto"} follows the sun at ${SRC[st.source] || st.source}; updates every minute.` : `Always ${st.mode === "day" ? "light" : "dark"}. Choose Auto to follow the real sun.`;
       document.querySelectorAll(".sky-seg [data-skymode]").forEach((b) => { const on = b.dataset.skymode === st.mode; b.setAttribute("aria-selected", String(on)); b.setAttribute("aria-checked", String(on)); });
     };
-    document.addEventListener("swz-sky", (e) => paintSkyMenu(e.detail));
-    paintSkyMenu(SKY.state());
-    document.querySelectorAll(".sky-seg [data-skymode]").forEach((b) => b.addEventListener("click", () => SKY.setMode(b.dataset.skymode)));
+    // Auto's sky themes: a swatch per theme (night → day gradient, accent dot)
+    const tbox = $("skyThemes");
+    if (tbox && SKY.themes) {
+      tbox.innerHTML = SKY.themes().map((t) => `<button role="radio" data-skytheme="${esc(t.key)}" title="${esc(t.name)} — ${esc(t.note)}"
+        style="--sw-n:${esc(t.night)};--sw-nl:${esc(t.nightLow)};--sw-d:${esc(t.day)};--sw-dl:${esc(t.dayLow)};--sw-a:${esc(t.accent[0])}">
+        <span class="sw" aria-hidden="true"></span><span class="sw-name">${esc(t.name)}</span></button>`).join("");
+      tbox.addEventListener("click", (e) => {
+        const b = e.target.closest("[data-skytheme]"); if (!b) return;
+        e.stopPropagation();
+        SKY.setTheme(b.dataset.skytheme);
+        if (SKY.mode() !== "auto") SKY.setMode("auto");
+        savePrefs();
+      });
+    }
+    // remember the choice on the server too, so every browser you sign in from looks the same
+    let prefTimer = 0;
+    function savePrefs() {
+      clearTimeout(prefTimer);
+      prefTimer = setTimeout(() => {
+        fetch(S.api.prefs, { method: "POST", credentials: "same-origin",
+          headers: { "Content-Type": "application/json", "X-Requested-With": "XMLHttpRequest" },
+          body: JSON.stringify({ sky: SKY.mode(), skytheme: SKY.theme() }) }).catch(() => {});
+      }, 400);
+    }
+    const paintThemes = (st) => {
+      if (!tbox) return;
+      tbox.classList.toggle("dim", st.mode !== "auto");
+      tbox.querySelectorAll("[data-skytheme]").forEach((b) => b.setAttribute("aria-checked", String(b.dataset.skytheme === st.theme)));
+    };
+    document.addEventListener("swz-sky", (e) => { paintSkyMenu(e.detail); paintThemes(e.detail); });
+    paintSkyMenu(SKY.state()); paintThemes(SKY.state());
+    document.querySelectorAll(".sky-seg [data-skymode]").forEach((b) => b.addEventListener("click", () => { SKY.setMode(b.dataset.skymode); savePrefs(); }));
   }
 
   const menu = $("menu"), menuBtn = $("menuBtn");

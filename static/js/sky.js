@@ -3,12 +3,13 @@
  * The sky follows the real sun: its elevation is computed for a location (this device's, the server's,
  * or a guess from the browser's time zone) and mapped onto a palette that runs night → dawn → golden
  * hour → day → dusk. It is re-evaluated every minute and the colours glide between states (CSS @property).
- * At night a constellation (drifting stars linked to neighbours and to the pointer) fades in; by day it
- * fades out and stops drawing entirely.
+ * A constellation (drifting stars linked to neighbours and to the pointer) is always there: bright at
+ * night, a faint line drawing by day and on the Light and Dark themes.
  *
  * window.SWZ_SKY.init({ canvas, fps, interactive })   start (once per page)
  * window.SWZ_SKY.setLocation(lat, lon, source)         'device' | 'server'  (remembered per browser)
  * window.SWZ_SKY.setMode('auto' | 'day' | 'night')
+ * window.SWZ_SKY.setTheme(key) / theme() / themes()   Auto's sky theme (teal, glacier, aurora, …)
  * window.SWZ_SKY.state()                               { elevation, phase, source, mode }
  */
 (function () {
@@ -61,14 +62,69 @@
     day: { top: "#f6f8fb", mid: "#eff3f7", low: "#e7edf3", g1: "#b9e5cd", g2: "#cddbff", g3: "#bcebe4", g4: "#fde0bd", stars: 0, tint: 0 },
     night: { top: "#121a23", mid: "#17212b", low: "#1b2632", g1: "#1c4152", g2: "#28325e", g3: "#15493f", g4: "#33294d", stars: 0, tint: 0 },
   };
-  let useThemes = true;
-  const modeNow = () => { const m = store.get("sky", "auto"); return m === "day" || m === "night" ? m : "auto"; };
+  /* Sky themes for Auto. Each gives a night, a twilight and a day sky (top/mid/low gradient + four
+     glows) and an accent for dark and for light surfaces; the eight elevation stops are built from
+     them so every theme runs the same night → dawn → golden hour → day progression as the original.
+     lightDay themes have pale day skies: once the sun is 6° up the page switches to dark text on
+     white frosted glass (the Light styling) and back to light text on tinted glass for evening. */
   const hex = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
   const mix = (a, b, t) => { const A = hex(a), B = hex(b); return "#" + A.map((v, i) => Math.round(v + (B[i] - v) * t).toString(16).padStart(2, "0")).join(""); };
-  function palette(el, evening) {
+  const P7 = (top, mid, low, g1, g2, g3, g4) => ({ top, mid, low, g1, g2, g3, g4 });
+  const SKIES = {
+    teal: { name: "Teal Sky", note: "teal on navy · blue sky", accent: ["#5eead4", "#0f9488"], stops: STOPS },
+    glacier: { name: "Glacier", note: "icy cyan on deep ocean · crisp morning sky", accent: ["#67e8f9", "#0284c7"], lightDay: true,
+      night: P7("#020a14", "#04182a", "#062a3e", "#0b4f6e", "#12345e", "#0a5c66", "#1b2f55"),
+      twi: P7("#0b2a4a", "#1f5a7c", "#7fc4d8", "#3a8fc0", "#6aa8d8", "#5cc6d0", "#bfe6f0"),
+      day: P7("#5aa9e6", "#9fd0f2", "#e2f2fb", "#7ac8ff", "#a8d4ff", "#8fe3ee", "#f2f8ff") },
+    aurora: { name: "Aurora", note: "violet night, green aurora · lilac dawn", accent: ["#a78bfa", "#6d28d9"], lightDay: true,
+      night: P7("#07041a", "#120a2e", "#1c1040", "#1f8a62", "#5b2a9e", "#1f7a6a", "#3a1f6b"),
+      twi: P7("#3a2a6e", "#8a6ab8", "#e8b8d8", "#9a7ae0", "#e0a0d0", "#7ad0c0", "#ffd0e0"),
+      day: P7("#c4b4f2", "#ddd2f8", "#f3edfd", "#cbb8ff", "#f0c8ec", "#bfeadf", "#fff0f6") },
+    sandsea: { name: "Sand & Sea", note: "warm charcoal · sunlit sand, sea-teal", accent: ["#5eead4", "#0f766e"], lightDay: true,
+      night: P7("#0e0c0a", "#1a1613", "#26201b", "#3a2e22", "#2a3a3a", "#1d4a46", "#4a3020"),
+      twi: P7("#3a4a5a", "#a08878", "#f0c090", "#6aa0a8", "#e0a080", "#4aa8a0", "#ffd8a0"),
+      day: P7("#a9d8e2", "#f3e6cc", "#fbf3e3", "#8fd6cf", "#f6d7a8", "#6cc4bd", "#ffe9c2") },
+    graphite: { name: "Graphite", note: "neutral graphite · soft fog, sky-blue", accent: ["#7cc4fa", "#0369a1"], lightDay: true,
+      night: P7("#0b0c0e", "#141619", "#1c1f23", "#2a2f36", "#303540", "#23292f", "#3a3a40"),
+      twi: P7("#2a2f38", "#5a6070", "#a8aebb", "#6a7488", "#8a8fa0", "#7a8a96", "#c8ccd6"),
+      day: P7("#cdd5de", "#e4e8ed", "#f4f6f8", "#b8c8dc", "#cfd6e2", "#c4d6dc", "#eef0f3") },
+    monsoon: { name: "Monsoon", note: "rain-cloud slate · misty sage", accent: ["#7ee0c8", "#0f766e"], lightDay: true,
+      night: P7("#0a0f12", "#131b20", "#1b262c", "#24404a", "#2a3540", "#1f4a45", "#2e3a3e"),
+      twi: P7("#2e3e48", "#5f7680", "#a9bfb8", "#5a8a90", "#7a9098", "#6aa898", "#c8d8c8"),
+      day: P7("#b2c8c2", "#d5e2dc", "#eef4f0", "#b6d4c6", "#c8d6d2", "#a8d4c4", "#f0f2e6") },
+    lotus: { name: "Lotus", note: "plum · blush-pink dawn, orchid", accent: ["#f0abfc", "#a21caf"], lightDay: true,
+      night: P7("#12061a", "#1f0c2a", "#2c1238", "#5a1f5e", "#3a1a5a", "#6a2a50", "#2a1440"),
+      twi: P7("#4a2a5e", "#b06a9a", "#f6b8c8", "#c070b0", "#f090a8", "#a088d0", "#ffd0d8"),
+      day: P7("#f3c6d9", "#f9e1ea", "#fdf2f6", "#f4bcd6", "#e6c6f2", "#f8d2c8", "#fff0e8") },
+    nordic: { name: "Nordic", note: "polar blue · icy white, periwinkle", accent: ["#a5b4fc", "#4338ca"], lightDay: true,
+      night: P7("#050b18", "#0b1730", "#122444", "#1e3d7a", "#2a3a80", "#165a72", "#283868"),
+      twi: P7("#2a3d70", "#7088c0", "#c8d4f0", "#6a8ae0", "#9aa8f0", "#7ab8d8", "#e0e8ff"),
+      day: P7("#c9d8f2", "#e6edf9", "#f6f8fd", "#c6d2fa", "#d6dcfb", "#cfe6f4", "#f4f6ff") },
+    ember: { name: "Ember", note: "campfire · warm peach, copper", accent: ["#fb923c", "#c2410c"], lightDay: true,
+      night: P7("#0e0806", "#1c0f0a", "#2c160c", "#6a2a10", "#4a1a10", "#8a3a12", "#3a1a14"),
+      twi: P7("#4a2418", "#b05a30", "#ffb070", "#e07a40", "#c05040", "#f0a050", "#ffd090"),
+      day: P7("#f6c9a8", "#fbe2cf", "#fef3ea", "#f8c49a", "#f4b8a4", "#fad7a0", "#fff0de") },
+  };
+  const KEYS7 = ["top", "mid", "low", "g1", "g2", "g3", "g4"];
+  const blend = (a, b, t) => { const o = {}; for (const k of KEYS7) o[k] = mix(a[k], b[k], t); return o; };
+  function stopsFor(key) {
+    const th = SKIES[key] || SKIES.teal;
+    if (th.stops) return th.stops;
+    const n = th.night, w = th.twi, d = th.day, deep = blend(n, P7("#000000", "#000000", "#000000", "#000000", "#000000", "#000000", "#000000"), .25);
+    const golden = blend(w, d, .3); golden.low = mix(w.low, d.low, .15);
+    const at = [deep, n, blend(n, w, .45), w, golden, blend(w, d, .75), d, d];
+    return th.stops = STOPS.map((b, i) => Object.assign({}, at[i], { e: b.e, stars: b.stars, tint: b.tint }));
+  }
+  const themeNow = () => { const t = store.get("skytheme", "teal"); return SKIES[t] ? t : "teal"; };
+  const LIGHT_INK_AT = 6;      // sun elevation (°) above which lightDay themes use dark text
+  const STARS_BY_DAY = .5;     // the constellation never disappears: by day it is a faint line drawing
+  let useThemes = true;
+  const modeNow = () => { const m = store.get("sky", "auto"); return m === "day" || m === "night" ? m : "auto"; };
+  function palette(el, evening, stops) {
+    stops = stops || STOPS;
     let i = 0;
-    while (i < STOPS.length - 2 && el > STOPS[i + 1].e) i++;
-    const a = STOPS[i], b = STOPS[i + 1], t = Math.max(0, Math.min(1, (el - a.e) / (b.e - a.e)));
+    while (i < stops.length - 2 && el > stops[i + 1].e) i++;
+    const a = stops[i], b = stops[i + 1], t = Math.max(0, Math.min(1, (el - a.e) / (b.e - a.e)));
     const p = {};
     for (const k of ["top", "mid", "low", "g1", "g2", "g3", "g4"]) p[k] = mix(a[k], b[k], t);
     p.stars = a.stars + (b.stars - a.stars) * t; p.tint = a.tint + (b.tint - a.tint) * t;
@@ -108,24 +164,37 @@
     return hi;
   }
 
-  let current = { elevation: 0, phase: "", stars: 1, source: "timezone", mode: "auto" };
+  let current = { elevation: 0, phase: "", stars: 1, starAlpha: 1, starRgb: "140,170,255", source: "timezone", mode: "auto", theme: "teal", ink: "light" };
+  const rgbOf = (h) => hex(h).join(",");
   function apply() {
-    const mode = modeNow(), loc = location(), now = new Date();
+    const mode = modeNow(), loc = location(), now = new Date(), tkey = themeNow(), th = SKIES[tkey];
     let el, evening = false;
     if (mode === "auto") { el = sunElevation(now, loc.lat, loc.lon); evening = !rising(now, loc.lat, loc.lon); }
     else el = MODES[mode];
     const themed = mode !== "auto" && useThemes;
-    const p = themed ? THEMES[mode] : palette(el, evening);
+    const p = themed ? THEMES[mode] : palette(el, evening, mode === "auto" ? stopsFor(tkey) : STOPS);
+    // dark text on white glass: the Light theme, and Auto on a pale-day theme while the sun is up
+    const lightInk = themed ? mode === "day" : !!(mode === "auto" && th.lightDay && el >= LIGHT_INK_AT && useThemes);
     const s = root.style;
     s.setProperty("--sky-top", p.top); s.setProperty("--sky-mid", p.mid); s.setProperty("--sky-low", p.low);
     s.setProperty("--glow-1", p.g1); s.setProperty("--glow-2", p.g2); s.setProperty("--glow-3", p.g3); s.setProperty("--glow-4", p.g4);
-    s.setProperty("--glass-tint", (themed ? p.tint : legibleTint(p)).toFixed(3)); s.setProperty("--stars", p.stars.toFixed(3));
+    s.setProperty("--glass-tint", (themed || lightInk ? 0 : legibleTint(p)).toFixed(3)); s.setProperty("--stars", p.stars.toFixed(3));
     s.setProperty("--glass-tint-rgb", tintRgb(p).join(", "));
-    root.dataset.theme = themed ? (mode === "day" ? "light" : "dark") : "sky";
+    // Auto carries the theme's accent (bright step on dark glass, deep step on light glass)
+    if (mode === "auto") {
+      const acc = lightInk ? th.accent[1] : th.accent[0];
+      s.setProperty("--accent", acc); s.setProperty("--accent-ink", acc); s.setProperty("--accent-soft", "rgba(" + rgbOf(acc) + ", .16)");
+      s.setProperty("--accent-rgb", rgbOf(acc));
+    } else for (const k of ["--accent", "--accent-ink", "--accent-soft", "--accent-rgb"]) s.removeProperty(k);
+    root.dataset.theme = lightInk ? "light" : themed ? "dark" : "sky";
+    if (mode === "auto") root.dataset.auto = tkey; else delete root.dataset.auto;
     root.dataset.skyphase = themed ? (mode === "day" ? "light" : "night") : el < -6 ? "night" : el < 8 ? "twilight" : "day";
+    store.set("lasttheme", root.dataset.theme);   // lets the page pick light/dark before first paint
     const meta = document.querySelector('meta[name="theme-color"]');
     if (meta) meta.content = p.top;
-    current = { elevation: el, phase: mode === "auto" ? phaseName(el, evening) : mode === "day" ? "Light" : "Dark", stars: p.stars, source: loc.source, mode };
+    const starRgb = lightInk ? "38,58,96" : mode === "auto" ? rgbOf(mix(th.accent[0], "#c8d6ff", .55)) : "150,178,230";
+    current = { elevation: el, phase: mode === "auto" ? phaseName(el, evening) : mode === "day" ? "Light" : "Dark", stars: p.stars,
+      starAlpha: Math.max(p.stars, STARS_BY_DAY), starRgb, light: lightInk, source: loc.source, mode, theme: tkey, ink: lightInk ? "dark" : "light" };
     document.dispatchEvent(new CustomEvent("swz-sky", { detail: current }));
     if (wake) wake();
     if (!painted) {   // first paint: no 6 s glide from the default colours; later changes glide
@@ -154,7 +223,7 @@
       stars.length = n;
     }
     function draw(dt) {
-      const k = current.stars;
+      const k = current.starAlpha, night = current.stars, rgb = current.starRgb, light = current.light;
       ctx.clearRect(0, 0, W, H);
       if (k < .01) return;
       const speed = opts.speed || 1;
@@ -174,22 +243,24 @@
           const b = stars[j], dx = a.x - b.x, dy = a.y - b.y;
           if (dx > link || dx < -link || dy > link || dy < -link) continue;
           const d = Math.sqrt(dx * dx + dy * dy); if (d > link) continue;
-          ctx.strokeStyle = "rgba(140,170,255," + ((1 - d / link) * .42 * k).toFixed(3) + ")";
+          ctx.strokeStyle = "rgba(" + rgb + "," + ((1 - d / link) * (light ? .3 : .42) * k).toFixed(3) + ")";
           ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
         }
         if (opts.interactive && mouse.on) { const dx = a.x - mouse.x, dy = a.y - mouse.y, d = Math.sqrt(dx * dx + dy * dy);
-          if (d < link * 1.4) { ctx.strokeStyle = "rgba(170,195,255," + ((1 - d / (link * 1.4)) * .6 * k).toFixed(3) + ")";
+          if (d < link * 1.4) { ctx.strokeStyle = "rgba(" + rgb + "," + ((1 - d / (link * 1.4)) * (light ? .4 : .6) * k).toFixed(3) + ")";
             ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(mouse.x, mouse.y); ctx.stroke(); } }
       }
       for (const a of stars) {
         const al = (.55 + .45 * Math.sin(a.t)) * k;
-        if (a.r > 1.4) { const g = ctx.createRadialGradient(a.x, a.y, 0, a.x, a.y, a.r * 5);
+        if (light) { ctx.fillStyle = "rgba(" + rgb + "," + ((.35 + .3 * (al / Math.max(k, .01))) * k).toFixed(3) + ")";
+          ctx.beginPath(); ctx.arc(a.x, a.y, a.r * 1.1, 0, 6.283); ctx.fill(); continue; }
+        if (a.r > 1.4 && night > .2) { const g = ctx.createRadialGradient(a.x, a.y, 0, a.x, a.y, a.r * 5);
           g.addColorStop(0, "hsla(" + a.hue + ",90%,80%," + (.35 * al).toFixed(3) + ")"); g.addColorStop(1, "hsla(" + a.hue + ",90%,70%,0)");
           ctx.fillStyle = g; ctx.beginPath(); ctx.arc(a.x, a.y, a.r * 5, 0, 6.283); ctx.fill(); }
         ctx.fillStyle = "hsla(" + a.hue + ",80%,92%," + ((.5 + .5 * (al / Math.max(k, .01))) * k).toFixed(3) + ")";
         ctx.beginPath(); ctx.arc(a.x, a.y, a.r, 0, 6.283); ctx.fill();
       }
-      if (!still && opts.shooting !== false && k > .5) {
+      if (!still && opts.shooting !== false && night > .5) {
         if (!shoot && Math.random() < .0025 * dt) shoot = { x: rnd(W * .1, W * .9), y: rnd(0, H * .4), vx: rnd(7, 11) * (Math.random() < .5 ? -1 : 1), vy: rnd(3, 5), life: 1 };
         if (shoot) {
           const tx = shoot.x - shoot.vx * 9, ty = shoot.y - shoot.vy * 9, sg = ctx.createLinearGradient(shoot.x, shoot.y, tx, ty);
@@ -210,7 +281,7 @@
         draw(dt);
       }
       // keep animating only while stars are visible and the canvas is shown (hidden on 8K-class screens)
-      if (!still && current.stars >= .01 && cv.getClientRects().length) raf = requestAnimationFrame(frame);
+      if (!still && current.starAlpha >= .01 && cv.getClientRects().length) raf = requestAnimationFrame(frame);
     }
     wake = () => { if (!raf) { last = 0; raf = requestAnimationFrame(frame); } };
     addEventListener("resize", () => { resize(); if (still) draw(0); });
@@ -240,6 +311,12 @@
       if (started) apply();
     },
     setMode(m) { store.set("sky", m === "day" || m === "night" ? m : "auto"); if (started) apply(); },
+    setTheme(t) { store.set("skytheme", SKIES[t] ? t : "teal"); if (started) apply(); },
+    theme: themeNow,
+    themes: () => Object.keys(SKIES).map((k) => {
+      const st = stopsFor(k), n = st[1], d = st[6];
+      return { key: k, name: SKIES[k].name, note: SKIES[k].note, accent: SKIES[k].accent.slice(), night: n.mid, nightLow: n.low, day: d.top, dayLow: d.low };
+    }),
     mode: modeNow,
     state: () => current,
   };

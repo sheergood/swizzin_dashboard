@@ -117,7 +117,7 @@
       html[data-theme="dark"] .login { background: linear-gradient(150deg, rgba(43,58,73,.94), rgba(31,43,56,.94)); }
     }
   </style>
-  <script>try { var m = localStorage.getItem("swz.sky"); document.documentElement.dataset.theme = m === "day" ? "light" : m === "night" ? "dark" : "sky"; } catch (e) {}</script>
+  <script>try { var m = localStorage.getItem("swz.sky"), last = localStorage.getItem("swz.lasttheme"); document.documentElement.dataset.theme = m === "day" ? "light" : m === "night" ? "dark" : last === "light" ? "light" : "sky"; } catch (e) {}</script>
 </head>
 <body>
   <div class="sky" aria-hidden="true"></div>

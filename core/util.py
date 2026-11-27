@@ -205,11 +205,32 @@ def is_application_enabled(application, user):
         result = os.path.exists('/etc/systemd/system/multi-user.target.wants/{application}.service'.format(application=application))
     return result
 
+# App control runs as root through a small checked wrapper (swizzin installs it with a sudo rule
+# for it alone; see sources/functions/panel_sudoers). Servers that haven't had that update yet still
+# have the old systemctl rule, so fall back to it rather than break the buttons.
+PANEL_CTL = "/etc/swizzin/scripts/panel-systemctl"
+_ctl = {"checked": 0.0, "wrapper": False}
+
+
+def _use_wrapper():
+    import time
+    now = time.time()
+    if now - _ctl["checked"] > 300:
+        _ctl["checked"] = now
+        _ctl["wrapper"] = os.path.isfile(PANEL_CTL) and sp.run(
+            ('sudo', '-n', '-l', PANEL_CTL), stdout=sp.DEVNULL, stderr=sp.DEVNULL).returncode == 0
+    return _ctl["wrapper"]
+
+
 def systemctl(function, application):
+    if function not in ("start", "stop", "restart", "enable", "disable"):
+        return 2
+    if _use_wrapper():
+        return sp.run(('sudo', '-n', PANEL_CTL, function, application), stdout=sp.DEVNULL).returncode
     if function in ("enable", "disable"):
-        result = sp.run(('sudo', 'systemctl', function, '--now', application), stdout=sp.DEVNULL).returncode
+        result = sp.run(('sudo', '-n', 'systemctl', function, '--now', '--', application), stdout=sp.DEVNULL).returncode
     else:
-        result = sp.run(('sudo', 'systemctl', function, application), stdout=sp.DEVNULL).returncode
+        result = sp.run(('sudo', '-n', 'systemctl', function, '--', application), stdout=sp.DEVNULL).returncode
     return result
 
 def vnstat_data(interface, mode, begin=False):

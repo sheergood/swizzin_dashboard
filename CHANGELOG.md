@@ -3,6 +3,50 @@
 Fork of [liaralabs/swizzin_dashboard](https://github.com/liaralabs/swizzin_dashboard), tuned for
 seedbox servers. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [sheergood-9] — Nov 27 2026
+
+### Added
+- **Nine sky themes for Auto**: Teal Sky (the original), Glacier, Aurora, Sand & Sea, Graphite,
+  Monsoon, Lotus, Nordic and Ember, picked from swatches in the user menu. Each has its own night,
+  twilight and day sky and its own accent colour, and runs the same real-sun progression as before.
+  - **Text colours follow the sky.** Themes with pale days (all but Teal Sky) switch to dark text on
+    white frosted glass once the sun is 6° up and back to light text for the evening: twice a day,
+    never flickering. Checked by sweeping every theme through three whole days
+    (`tests/tools/theme_contrast.js`): dark text at 9.8:1 or better on the light glass; light text
+    keeps the original tint engine's guarantee on the dark glass.
+  - The accent (navigation, toggles, selection) uses the theme's bright shade on dark glass and its
+    deep shade on light glass.
+- **Stars on every theme.** The linked constellation stays all day (a faint line drawing by day,
+  in ink on light backgrounds) and on the Light and Dark themes too; shooting stars remain night-only.
+- **Your theme follows you.** Auto/Light/Dark and the sky theme are saved on the server for your
+  user (`/api/prefs`, allowlisted values only) and applied before the first paint on any browser
+  you sign in from. The login page remembers the light/dark look too, so nothing flashes.
+
+### Security
+- **Password guessing was not rate limited.** The limiter exempted every request that had an
+  Authorization header at all, so wrong passwords sent that way were never counted. Now only a valid
+  login is exempt (checked and cached 5 min, like the dashboard's own checks).
+- **Removed `/auth/check`**, the nginx single sign-on endpoint: unused since FileBrowser Quantum got
+  its own login page, and it answered "right or wrong password" without any rate limit.
+- **The panel now listens on 127.0.0.1 by default** (was 0.0.0.0). nginx is the way in (HTTPS, real
+  client addresses for the rate limiter); before, port 8333 answered plain-HTTP logins directly and
+  let anyone forge their address with X-Forwarded-For. Set `HOST` in swizzin.cfg to override.
+- **Random signing secret.** Login tokens were signed with the public default secret; each install
+  now generates its own (`.flask_secret`, mode 600) unless swizzin.cfg sets one.
+- **Buttons can't be pressed from other sites.** App start/stop/restart, preferences and the speed
+  test only accept requests from the dashboard itself (X-Requested-With, same Origin). App control
+  also accepts only start/stop/restart/enable/disable and plain unit names, and on servers with the
+  matching swizzin update runs through its root-owned checked wrapper instead of `sudo systemctl`.
+- Netdata (every process and user on the box) is admin-only; its proxy has a timeout.
+- Live stats over Socket.IO need a valid login.
+- Security headers: `X-Frame-Options: SAMEORIGIN` (no clickjacking), `nosniff`,
+  `Referrer-Policy: same-origin`, `no-store` on API answers.
+- Plex player state is allowlisted before it reaches the page.
+
+### Fixed
+- The user menu is opaque enough to read over cards (it sits inside the glass header, where
+  browsers can't blur what's behind it).
+
 ## [sheergood-8] — Nov 27 2026
 
 ### Fixed

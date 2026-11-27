@@ -5,9 +5,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="color-scheme" content="dark">
   <meta name="theme-color" content="#07080d">
-  <script>/* pick the theme before first paint so Light never flashes dark */
-    try { var m = localStorage.getItem("swz.sky");
-      document.documentElement.dataset.theme = m === "day" ? "light" : m === "night" ? "dark" : "sky";
+  <script>/* your theme follows you: the server's saved choice wins, then pick light/dark before first
+       paint so nothing flashes (Auto remembers whether it was last showing the light or the dark look) */
+    try { var P = {{ prefs|tojson }};
+      if (P.sky) localStorage.setItem("swz.sky", P.sky);
+      if (P.skytheme) localStorage.setItem("swz.skytheme", P.skytheme);
+      var m = localStorage.getItem("swz.sky"), last = localStorage.getItem("swz.lasttheme");
+      document.documentElement.dataset.theme = m === "day" ? "light" : m === "night" ? "dark" : last === "light" ? "light" : "sky";
       localStorage.removeItem("swz.compact"); } catch (e) {}</script>
   <title>{{ title }}</title>
   <link rel="shortcut icon" href="{{ url_for('static', filename='img/favicon/favicon.ico') }}">
@@ -72,6 +76,7 @@
             <button role="radio" data-skymode="day" title="Clean light theme with frosted glass">Light</button>
             <button role="radio" data-skymode="night" title="Slate dark theme with frosted glass">Dark</button>
           </div>
+          <div class="sky-themes" id="skyThemes" role="radiogroup" aria-label="Auto sky theme"></div>
           <div class="muted menu-sky-src" id="skySrc"></div>
         </div>
         <hr>
@@ -318,6 +323,7 @@
         specs: {{ url_for('api_specs')|tojson }},
         plex: {{ url_for('api_plex')|tojson }},
         speedtest: {{ url_for('api_speedtest')|tojson }},
+        prefs: {{ url_for('api_prefs')|tojson }},
         status: {{ url_for('app_status')|tojson }},
         service: {{ url_for('service')|tojson }},
         quota: {{ url_for('quota_free')|tojson }}

@@ -4,3 +4,6 @@ __pycache__/
 swizzin.cfg
 speedtest.json
 speedtest.json.tmp
+prefs.json
+prefs.json.tmp
+.flask_secret

@@ -9,7 +9,7 @@ class Config:
     FLASK_HTPASSWD_PATH = '/etc/htpasswd'
     FLASK_SECRET = "What's the password?"
     FLASK_AUTH_REALM = "What's the password?"
-    HOST = "0.0.0.0"
+    HOST = "127.0.0.1"   # nginx is the only way in (TLS, real client IPs); set HOST in swizzin.cfg to override
     PORT = "8333"
     RATELIMIT_ENABLED = True
     RATELIMIT_DEFAULT = "5 per minute"
