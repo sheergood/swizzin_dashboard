@@ -15,6 +15,23 @@ seedbox servers. Format follows [Keep a Changelog](https://keepachangelog.com/en
   syntax, smoke test.
 
 ### Added
+- **RAID aware** — the Drives card lists arrays above the disks:
+  - **mdadm**: level, size, member map (`[UU]`/`[U_]`), each member (✓ active, ✕ failed, ◌ spare),
+    health (Healthy / Checking / Rebuilding / Degraded / Inactive), check or rebuild progress with
+    time left and speed, and live array read/write. Read from `/proc/mdstat`, no root needed.
+  - **ZFS** pools (when `zpool` exists): health, used/size, capacity and fragmentation.
+  - **Hardware RAID** controller volumes (PERC/MegaRAID/Smart Array/Adaptec/…) are labelled, and
+    the physical disks behind them get SMART/wear/health via the root collector
+    (`smartctl --scan-open`, `-d megaraid,N` etc.).
+  - Each disk row shows which arrays it belongs to (a failed membership is marked ✗).
+- **Processes (btop-style)** — top 20 programs by CPU (100 % = one core, like top/btop) or by
+  memory, with PID, user, threads, CPU and RSS bars, the full command line on hover and a filter;
+  `GET /api/procs`, polled every 3 s only while the card is on screen.
+- **Per-core graphs** — every logical CPU gets its own 2-minute area graph with current load
+  (amber at 60 %, red at 90 %); hover shows now / average / peak and the core temperature.
+- **24-hour network graph** — the Data transferred card has 7 days | 24 hours | Table; the hourly
+  chart shows upload and download per hour from vnstat's hourly data (vnstat 1.x and 2.x).
+- **Login logo** sits on a frosted-white badge — the dark teal logo was invisible on the sky.
 - **Living sky theme for the whole UI** (`static/js/sky.js`, shared by the dashboard and login):
   the background follows the sun's real elevation at the server's location (or this device's when
   📍 is on), re-evaluated every minute — night → dawn → golden hour → day → golden hour → dusk —

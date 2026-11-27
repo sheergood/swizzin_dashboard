@@ -276,7 +276,8 @@ def live():
     cpu = _cpu_times()
     net = _net_bytes()
     disks = _physical_disks()
-    dsk = _disk_sectors(disks)
+    mds = [os.path.basename(p) for p in glob.glob("/sys/block/md*")]
+    dsk = _disk_sectors(disks + mds)
     with _lock:
         prev = dict(_prev)
         _prev.update(t=now, cpu=cpu, net=net, disk=dsk)
@@ -439,8 +440,10 @@ def drives():
         size = (_read_int(base + "/size") or 0) * 512
         rot = _read_int(base + "/queue/rotational")
         model = _read(base + "/device/model") or _read(base + "/device/../model") or name
-        d = {"name": name, "kind": "NVMe" if name.startswith("nvme") else ("HDD" if rot else "SSD"),
-             "model": " ".join(model.split()), "capacity": size, "smart": False}
+        model = " ".join(model.split())
+        hw = any(k in model.upper() for k in HW_RAID_MODELS)
+        d = {"name": name, "kind": "RAID" if hw else "NVMe" if name.startswith("nvme") else ("HDD" if rot else "SSD"),
+             "model": model, "capacity": size, "smart": False, "hw_raid": hw}
         path = os.path.join(SMART_DIR, name + ".json")
         try:
             with open(path) as f:
@@ -449,10 +452,28 @@ def drives():
             parsed["capacity"] = parsed["capacity"] or size
             parsed["smart"] = True
             parsed["smart_age"] = round(time.time() - os.path.getmtime(path))
+            parsed["hw_raid"] = hw
+            if hw:
+                parsed["kind"] = "RAID"
             d = parsed
         except Exception:
             pass
         out.append(d)
+    # physical disks behind a hardware RAID controller (collector writes hw-<type>-<n>.json)
+    for path in sorted(glob.glob(os.path.join(SMART_DIR, "hw-*.json"))):
+        try:
+            with open(path) as f:
+                j = json.load(f)
+            tag = os.path.basename(path)[3:-5]                     # e.g. megaraid-0
+            parsed = _parse_smart(tag, j)
+            parsed.update(smart=True, behind_controller=True, name=tag.replace("-", ",", 1),
+                          smart_age=round(time.time() - os.path.getmtime(path)))
+            out.append(parsed)
+        except Exception:
+            pass
+    r = raid()
+    for d in out:
+        d["arrays"] = r["member_of"].get(d["name"], [])
     return out
 
 
@@ -498,6 +519,10 @@ def traffic():
     try:
         dj = _vnstat_json("d")
         mj = _vnstat_json("m")
+        try:
+            hj = _vnstat_json("h")
+        except Exception:
+            hj = {}
     except Exception as e:
         return {"available": False, "reason": "vnstat failed: {}".format(e)}
 
@@ -559,8 +584,27 @@ def traffic():
     if created and "year" in created:
         since = "{:04d}-{:02d}-{:02d}".format(created["year"], created.get("month", 1), created.get("day", 1))
 
+    # last 24 hours (vnstat 2: traffic.hour with date+time; vnstat 1: traffic.hours with id = hour)
+    hi = pick(hj) if hj else None
+    hours_raw = (hi or {}).get("traffic", {}).get("hour" if v2 else "hours") or []
+    hmap = {}
+    for h in hours_raw:
+        hd = h.get("date", {})
+        hr = (h.get("time") or {}).get("hour", h.get("id"))
+        try:
+            hmap[dt.datetime(hd["year"], hd["month"], hd["day"], int(hr))] = (h.get("rx", 0) * mult, h.get("tx", 0) * mult)
+        except Exception:
+            continue
+    now_h = dt.datetime.now().replace(minute=0, second=0, microsecond=0)
+    hours24 = []
+    for i in range(23, -1, -1):
+        t = now_h - dt.timedelta(hours=i)
+        rx, tx = hmap.get(t, (0, 0))
+        hours24.append({"time": t.strftime("%Y-%m-%dT%H:00"), "rx": rx, "tx": tx})
+
     data = {
         "available": True,
+        "hours": hours24,
         "iface": di.get("name") or di.get("id"),
         "since": since,
         "today": total([today]),
@@ -595,3 +639,155 @@ def fail2ban():
         return {"available": False, "reason": "collector not installed"}
     except Exception as e:
         return {"available": False, "reason": str(e)}
+
+
+# --------------------------------------------------------------------------- RAID (mdadm, hardware, ZFS)
+
+MDSTAT = os.environ.get("SWZ_TEST_MDSTAT", "/proc/mdstat")   # override only for tests
+HW_RAID_MODELS = ("PERC", "MEGARAID", "MR9", "LSI", "LOGICAL VOLUME", "SMART ARRAY", "RAID", "AVAGO", "ADAPTEC", "ARECA", "HPSA", "VIRTUAL DISK")
+
+
+def _parent_disk(part):
+    """sda3 -> sda, nvme0n1p2 -> nvme0n1 (sysfs first, name rules as fallback)."""
+    try:
+        real = os.path.realpath("/sys/class/block/" + part)
+        if os.path.exists(os.path.join(real, "partition")):
+            return os.path.basename(os.path.dirname(real))
+    except Exception:
+        pass
+    import re
+    m = re.match(r"^((?:nvme\d+n\d+|mmcblk\d+))p\d+$", part) or re.match(r"^([a-z]+)\d+$", part)
+    return m.group(1) if m else part
+
+
+def mdraid():
+    import re
+    text = _read(MDSTAT, "") or ""
+    arrays, cur = [], None
+    for line in text.splitlines():
+        m = re.match(r"^(md\w+)\s*:\s*(\w+)\s*(?:\((?:auto-)?read-only\)\s*)?(raid\d+|linear|multipath)?\s*(.*)$", line)
+        if m:
+            name, state, level, rest = m.groups()
+            members = []
+            for mm in re.finditer(r"(\S+?)\[(\d+)\](\((?:F|S|W|R)\))?", rest):
+                dev, slot, flag = mm.groups()
+                members.append({"dev": dev, "disk": _parent_disk(dev), "slot": int(slot),
+                                "failed": flag == "(F)", "spare": flag == "(S)"})
+            cur = {"name": name, "state": state, "level": level or "unknown", "members": members,
+                   "size": None, "want": None, "have": None, "map": None, "action": None, "progress": None,
+                   "finish": None, "speed": None}
+            arrays.append(cur)
+            continue
+        if cur is None:
+            continue
+        m = re.search(r"(\d+) blocks", line)
+        if m and cur["size"] is None:
+            cur["size"] = int(m.group(1)) * 1024
+        m = re.search(r"\[(\d+)/(\d+)\]\s*\[([U_]+)\]", line)
+        if m:
+            cur["want"], cur["have"], cur["map"] = int(m.group(1)), int(m.group(2)), m.group(3)
+        m = re.search(r"(recovery|resync|reshape|check|repair)\s*=\s*([\d.]+)%.*?finish=([\d.]+)min(?:.*?speed=(\d+)K/sec)?", line)
+        if m:
+            cur["action"], cur["progress"] = m.group(1), float(m.group(2))
+            cur["finish"] = float(m.group(3)) * 60
+            cur["speed"] = int(m.group(4)) * 1024 if m.group(4) else None
+        elif re.search(r"(resync|recovery)\s*=\s*(DELAYED|PENDING)", line):
+            cur["action"] = "pending"
+    for a in arrays:
+        failed = any(x["failed"] for x in a["members"])
+        degraded = bool(a["map"] and "_" in a["map"]) or failed
+        a["health"] = ("rebuilding" if a["action"] in ("recovery", "resync", "reshape", "pending") and degraded else
+                       "checking" if a["action"] in ("check", "repair", "resync") else
+                       "degraded" if degraded else "inactive" if a["state"] != "active" else "healthy")
+    return arrays
+
+
+def zfs_pools():
+    if not shutil.which("zpool"):
+        return []
+    out = _run(["zpool", "list", "-H", "-p", "-o", "name,size,alloc,free,health,frag,cap"], 5)
+    pools = []
+    for line in out.strip().splitlines():
+        f = line.split("\t")
+        if len(f) >= 7:
+            def num(x):
+                try:
+                    return int(x)
+                except ValueError:
+                    return None
+            pools.append({"name": f[0], "size": num(f[1]), "alloc": num(f[2]), "free": num(f[3]),
+                          "health": f[4], "frag": num(f[5].rstrip("%")), "cap": num(f[6].rstrip("%"))})
+    return pools
+
+
+def raid():
+    md = mdraid()
+    member_of = {}
+    for a in md:
+        for m in a["members"]:
+            member_of.setdefault(m["disk"], []).append(a["name"] + (" ✗" if m["failed"] else ""))
+    return {"md": md, "zfs": zfs_pools(), "member_of": member_of}
+
+
+# --------------------------------------------------------------------------- processes (btop-style)
+
+_proc_prev = {"total": None, "ticks": {}}
+_users = {}
+
+
+def _user(uid):
+    if uid not in _users:
+        try:
+            import pwd
+            _users[uid] = pwd.getpwuid(uid).pw_name
+        except Exception:
+            _users[uid] = str(uid)
+    return _users[uid]
+
+
+def processes(limit=40):
+    """Top processes by CPU and memory. CPU% is per core like top/btop (can exceed 100 % for
+    multi-threaded programs); computed against the previous call."""
+    total = _cpu_times().get("cpu", (0, 0, 0))[0]
+    ncpu = os.cpu_count() or 1
+    page = os.sysconf("SC_PAGE_SIZE")
+    mem_total = _mem()["total"] or 1
+    prev_total, prev = _proc_prev["total"], _proc_prev["ticks"]
+    dt_core = (total - prev_total) / ncpu if prev_total else 0
+    rows, ticks = [], {}
+    for pid in os.listdir("/proc"):
+        if not pid.isdigit():
+            continue
+        try:
+            with open("/proc/%s/stat" % pid) as f:
+                st = f.read()
+            comm = st[st.index("(") + 1:st.rindex(")")]
+            f2 = st[st.rindex(")") + 2:].split()
+            utime, stime, threads, start, rss = int(f2[11]), int(f2[12]), int(f2[17]), int(f2[19]), int(f2[21])
+            key = (pid, start)
+            t = utime + stime
+            ticks[key] = t
+            cpu = 100.0 * (t - prev[key]) / dt_core if dt_core > 0 and key in prev else 0.0
+            uid = None
+            with open("/proc/%s/status" % pid) as f:
+                for line in f:
+                    if line.startswith("Uid:"):
+                        uid = int(line.split()[1])
+                        break
+            rows.append({"pid": int(pid), "name": comm, "state": f2[0], "threads": threads,
+                         "cpu": round(max(cpu, 0.0), 1), "rss": rss * page, "mem": round(100.0 * rss * page / mem_total, 2),
+                         "user": _user(uid) if uid is not None else "?", "key": key})
+        except Exception:
+            continue   # process exited while we read it, or no permission
+    _proc_prev.update(total=total, ticks=ticks)
+    by_cpu = sorted(rows, key=lambda r: (r["cpu"], r["rss"]), reverse=True)[:limit]
+    by_mem = sorted(rows, key=lambda r: r["rss"], reverse=True)[:limit]
+    pick = {r["key"]: r for r in by_cpu + by_mem}
+    for r in pick.values():
+        try:
+            with open("/proc/%d/cmdline" % r["pid"], "rb") as f:
+                r["cmd"] = f.read(400).replace(b"\0", b" ").decode("utf-8", "replace").strip() or "[" + r["name"] + "]"
+        except Exception:
+            r["cmd"] = r["name"]
+        r.pop("key", None)
+    return {"count": len(rows), "warming": dt_core <= 0, "procs": list(pick.values())}

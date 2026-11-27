@@ -166,7 +166,7 @@
         <div class="stat-row" id="cpuStats"></div>
       </div>
       <div class="chart" id="cpuChart" role="img" aria-label="CPU usage over the last 3 minutes"></div>
-      <div class="sub-head"><span>Per-thread load</span><span class="muted" id="coreTempsLine"></span></div>
+      <div class="sub-head"><span>Per-core load · last 2 min</span><span class="muted" id="coreTempsLine"></span></div>
       <div class="cores" id="cores"></div>
     </section>
 
@@ -185,15 +185,17 @@
       <div class="card-head">
         <div><h2>Data transferred</h2><p class="muted" id="trafficNote">Loading vnstat history…</p></div>
         <div class="seg" role="tablist" aria-label="Last 7 days view">
-          <button role="tab" aria-selected="true" data-view="chart">Chart</button>
+          <button role="tab" aria-selected="true" data-view="chart">7 days</button>
+          <button role="tab" aria-selected="false" data-view="hours">24 hours</button>
           <button role="tab" aria-selected="false" data-view="table">Table</button>
         </div>
       </div>
       <div class="traffic">
         <div class="periods" id="periods"></div>
         <div class="week">
-          <div class="sub-head"><span>Last 7 days</span><span class="legend"><span><i class="dot s2"></i>Upload</span><span><i class="dot s1"></i>Download</span></span></div>
+          <div class="sub-head"><span id="weekTitle">Last 7 days</span><span class="legend"><span><i class="dot s2"></i>Upload</span><span><i class="dot s1"></i>Download</span></span></div>
           <div class="bars" id="bars" role="img" aria-label="Upload and download per day for the last 7 days"></div>
+          <div class="bars hours" id="hourBars" role="img" aria-label="Upload and download per hour for the last 24 hours" hidden></div>
           <div class="week-table" id="weekTable" hidden></div>
         </div>
       </div>
@@ -205,6 +207,7 @@
         <div><h2>Drives</h2><p class="muted" id="smartNote">SMART health, wear and live I/O</p></div>
         <div class="disk-totals" id="diskTotals"></div>
       </div>
+      <div class="arrays" id="arrays" hidden></div>
       <div class="drives-list" id="drives"></div>
     </section>
 
@@ -240,6 +243,27 @@
     </section>
     {% endif %}
 
+    <!-- Processes (btop-style) -->
+    {% if admin %}
+    <section class="glass card" data-span="12" id="procCard">
+      <div class="card-head">
+        <div><h2>Processes</h2><p class="muted" id="procNote">Top programs by CPU and memory · refreshes every 3 s while visible</p></div>
+        <div class="proc-tools">
+          <input class="search" id="procSearch" type="search" placeholder="Filter processes…" aria-label="Filter processes">
+          <div class="seg" role="tablist" aria-label="Sort processes by">
+            <button role="tab" aria-selected="true" data-psort="cpu">CPU</button>
+            <button role="tab" aria-selected="false" data-psort="mem">Memory</button>
+          </div>
+        </div>
+      </div>
+      <div class="proc-table" role="table" aria-label="Top processes">
+        <div class="proc-row proc-head" role="row"><span role="columnheader">PID</span><span role="columnheader">Program</span><span role="columnheader">User</span>
+          <span role="columnheader" class="num">Threads</span><span role="columnheader">CPU</span><span role="columnheader">Memory</span></div>
+        <div id="procs"></div>
+      </div>
+    </section>
+    {% endif %}
+
     <!-- Services -->
     <section class="glass card" data-span="12">
       <div class="card-head">
@@ -269,6 +293,7 @@
         place: {{ url_for('api_place')|tojson }},
         weather: {{ url_for('api_weather')|tojson }},
         fail2ban: {{ url_for('api_fail2ban')|tojson }},
+        procs: {{ url_for('api_procs')|tojson }},
         status: {{ url_for('app_status')|tojson }},
         service: {{ url_for('service')|tojson }},
         quota: {{ url_for('quota_free')|tojson }}

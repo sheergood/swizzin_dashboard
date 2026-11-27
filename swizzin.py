@@ -243,7 +243,7 @@ def api_live(user):
 @htpasswd.required
 @_api
 def api_storage(user):
-    return {"mounts": hw.mounts_usage(get_mounts()), "drives": hw.drives()}
+    return {"mounts": hw.mounts_usage(get_mounts()), "drives": hw.drives(), "raid": hw.raid()}
 
 @app.route('/api/place')
 @htpasswd.required
@@ -262,6 +262,12 @@ def api_weather(user):
 @_api
 def api_fail2ban(user):
     return hw.fail2ban()
+
+@app.route('/api/procs')
+@htpasswd.required
+@_api
+def api_procs(user):
+    return hw.processes()
 
 @app.route('/api/traffic')
 @htpasswd.required

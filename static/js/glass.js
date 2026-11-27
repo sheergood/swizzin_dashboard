@@ -272,15 +272,19 @@
     ].map(([v, k]) => `<div class="stat"><b>${v}</b><small>${k}</small></div>`).join("");
     const coresEl = $("cores");
     if (coresEl.children.length !== c.cores.length) {
-      coresEl.innerHTML = c.cores.map((_, i) => `<div class="core" data-i="${i}"><span></span></div>`).join("");
+      coresEl.innerHTML = c.cores.map((_, i) => `<div class="core" data-i="${i}"><span class="core-id">C${i}</span><b class="core-v">–</b><svg class="core-g" viewBox="0 0 ${CORE_HIST - 1} 100" preserveAspectRatio="none" aria-hidden="true"><path class="core-a"/><path class="core-l"/></svg></div>`).join("");
     }
+    const perPhys = c.core_temps.length && c.cores.length ? c.cores.length / c.core_temps.length : 0;
     c.cores.forEach((v, i) => {
-      const el = coresEl.children[i]; const a = v == null ? 0 : v / 100;
-      // sequential single hue: low load recedes into the surface, high load glows
-      el.style.background = `rgba(51,140,237,${(0.08 + a * 0.8).toFixed(3)})`;
-      el.style.boxShadow = a > .6 ? `0 0 14px rgba(51,140,237,${(a - .5).toFixed(2)})` : "none";
-      el.firstChild.textContent = v == null ? "–" : Math.round(v);
-      el.dataset.v = v;
+      const h = coreHist[i] || (coreHist[i] = []);
+      h.push(v == null ? 0 : v); if (h.length > CORE_HIST) h.shift();
+      const el = coresEl.children[i], off = CORE_HIST - h.length;
+      const pts = h.map((x, j) => `${j + off},${(100 - Math.min(100, x)).toFixed(1)}`).join(" L");
+      el.querySelector(".core-l").setAttribute("d", "M" + pts);
+      el.querySelector(".core-a").setAttribute("d", `M${off},100 L${pts} L${CORE_HIST - 1},100 Z`);
+      el.querySelector(".core-v").textContent = v == null ? "–" : Math.round(v) + "%";
+      el.dataset.v = v; el.dataset.t = perPhys ? c.core_temps[Math.floor(i / perPhys)] ?? "" : "";
+      el.classList.toggle("hot", v >= 90); el.classList.toggle("busy", v >= 60 && v < 90);
     });
     $("coreTempsLine").textContent = c.core_temps.length ? `core temps ${Math.min(...c.core_temps)}–${Math.max(...c.core_temps)}°C` : "";
     cpuChart.push([c.total]);
@@ -291,11 +295,13 @@
     renderDriveIO(d.disk_io);
   }
 
+  const CORE_HIST = 60, coreHist = [];
   $("cores") && $("cores").addEventListener("pointermove", (e) => {
     const el = e.target.closest(".core"); if (!el) return hideTip();
-    const i = +el.dataset.i, t = lastLive && lastLive.cpu.core_temps;
-    showTip(`<div class="t-title">Thread ${i}</div><div class="t-row"><span>Load</span><b>${pct(el.dataset.v === "null" ? null : el.dataset.v, 1)}</b></div>` +
-      (t && t.length ? `<div class="t-row"><span>Core temp</span><b>${t[Math.floor(i % t.length)] ?? "–"}°C</b></div>` : ""), e.clientX, e.clientY);
+    const i = +el.dataset.i, h = coreHist[i] || [], avg = h.length ? h.reduce((a, b) => a + b, 0) / h.length : null;
+    showTip(`<div class="t-title">CPU ${i}</div><div class="t-row"><span>Now</span><b>${pct(el.dataset.v === "null" ? null : el.dataset.v, 1)}</b></div>
+      <div class="t-row"><span>2-min avg</span><b>${pct(avg, 1)}</b></div><div class="t-row"><span>2-min peak</span><b>${pct(h.length ? Math.max(...h) : null, 0)}</b></div>` +
+      (el.dataset.t ? `<div class="t-row"><span>Core temp</span><b>${el.dataset.t}°C</b></div>` : ""), e.clientX, e.clientY);
   });
   $("cores") && $("cores").addEventListener("pointerleave", hideTip);
 
@@ -350,9 +356,11 @@
   }
 
   /* ------------------------------------------------------------ storage */
+  let raidCache = { md: [], zfs: [] };
   async function loadStorage() {
     const d = await getJSON(S.api.storage);
-    drivesCache = d.drives;
+    drivesCache = d.drives; raidCache = d.raid || { md: [], zfs: [] };
+    renderArrays();
     $("mounts").innerHTML = d.mounts.map((m) => {
       const p = (m.used / m.total) * 100, l = lvl(p, 85, 95);
       return barRow(m.mount, [{ v: p, c: l === "good" ? css("--s1") : levelColor(l) }], `${bytes(m.used)} / ${bytes(m.total, 0)} · ${pct(p)}`,
@@ -458,7 +466,7 @@
       } else key = `<span class="dr-wear"><small>no SMART</small></span>`;
       return `<button class="drive-row" data-pop="popDrive" data-drive="${i}" aria-haspopup="dialog" aria-expanded="false" data-dev="${esc(dr.name)}">
         <span class="kind">${esc(dr.kind)}</span>
-        <span class="dr-name"><b>${esc(dr.model)}</b><small>${esc(dr.name)} · ${bytes(dr.capacity, 1)}</small></span>
+        <span class="dr-name"><b>${esc(dr.model)}</b><small>${esc(dr.name)} · ${bytes(dr.capacity, 1)}${dr.behind_controller ? " · behind RAID controller" : ""}${dr.hw_raid ? " · RAID volume" : ""}</small>${(dr.arrays || []).length ? `<span class="dr-arrays">${dr.arrays.map((a) => `<em class="${a.includes("✗") ? "bad" : ""}">${esc(a)}</em>`).join("")}</span>` : ""}</span>
         ${key}
         <span class="dr-busy" title="IO% — share of time the disk was busy"><small>IO</small><span class="bar"><i data-busy-bar></i></span><b data-io="busy">–</b></span>
         <span class="dr-io" title="Read"><span class="dr-io-head"><i class="dot s1"></i><b data-io="read">–</b></span><span class="spark" data-spark="read"></span></span>
@@ -468,6 +476,37 @@
       </button>`;
     }).join("") || `<div class="empty">No physical drives found</div>`;
     if (openPop && openPop.pop.id === "popDrive") closePop();
+    if (lastLive) renderDriveIO(lastLive.disk_io);
+  }
+
+  const RAID_HEALTH = { healthy: ["good", "Healthy"], checking: ["good", "Checking"], rebuilding: ["warn", "Rebuilding"],
+    degraded: ["crit", "Degraded"], inactive: ["crit", "Inactive"] };
+  function renderArrays() {
+    const box = $("arrays"), md = raidCache.md || [], zfs = raidCache.zfs || [];
+    const hwVols = drivesCache.filter((d) => d.hw_raid);
+    box.hidden = !md.length && !zfs.length && !hwVols.length;
+    if (box.hidden) return;
+    const mdHtml = md.map((a) => {
+      const [cls, label] = RAID_HEALTH[a.health] || ["", a.health];
+      const prog = a.progress != null ? `<div class="array-prog"><span class="bar"><i style="width:${a.progress}%;background:${cls === "warn" ? css("--warn") : css("--s1")}"></i></span>
+        <small>${esc(a.action)} ${a.progress.toFixed(1)}%${a.finish ? " · " + dur(a.finish) + " left" : ""}${a.speed ? " · " + rate(a.speed) : ""}</small></div>` : "";
+      const members = a.members.map((m) => `<span class="member ${m.failed ? "bad" : m.spare ? "spare" : ""}" title="${m.failed ? "failed" : m.spare ? "spare" : "active"} · slot ${m.slot}">${m.failed ? "✕" : m.spare ? "◌" : "✓"} ${esc(m.dev)}</span>`).join("");
+      return `<div class="array" data-md="${esc(a.name)}">
+        <div class="array-top"><span class="kind">${esc((a.level || "").toUpperCase())}</span><b>${esc(a.name)}</b>
+          <small>${a.size ? bytes(a.size, 2) : ""}${a.map ? " · [" + esc(a.map) + "]" : ""}</small>
+          <span class="array-io" data-aio>–</span><span class="badge ${cls}">${label}</span></div>
+        <div class="array-members">${members}</div>${prog}</div>`;
+    }).join("");
+    const zHtml = zfs.map((p) => {
+      const ok = p.health === "ONLINE", cls = ok ? "good" : p.health === "DEGRADED" ? "warn" : "crit";
+      return `<div class="array"><div class="array-top"><span class="kind">ZFS</span><b>${esc(p.name)}</b>
+        <small>${bytes(p.alloc)} of ${bytes(p.size, 1)} · ${p.cap ?? "–"}% full${p.frag != null ? " · frag " + p.frag + "%" : ""}</small>
+        <span class="array-io"></span><span class="badge ${cls}">${esc(p.health)}</span></div></div>`;
+    }).join("");
+    const hwHtml = hwVols.map((d) => `<div class="array"><div class="array-top"><span class="kind">HW RAID</span><b>${esc(d.name)}</b>
+        <small>${esc(d.model)} · ${bytes(d.capacity, 1)} · controller volume${drivesCache.some((x) => x.behind_controller) ? " — member disks listed below" : " — install smartmontools for member disk health"}</small>
+        <span class="array-io"></span><span class="badge ${d.healthy === false ? "crit" : ""}">${d.healthy === false ? "Failing" : "Volume"}</span></div></div>`).join("");
+    box.innerHTML = `<div class="sub-head"><span>Arrays</span><span class="muted">${md.length ? md.length + " mdadm" : ""}${zfs.length ? (md.length ? " · " : "") + zfs.length + " ZFS" : ""}${hwVols.length ? ((md.length || zfs.length) ? " · " : "") + hwVols.length + " hardware" : ""}</span></div>` + mdHtml + zHtml + hwHtml;
     if (lastLive) renderDriveIO(lastLive.disk_io);
   }
 
@@ -486,12 +525,18 @@
   }
   function renderDriveIO(io) {
     let tr = 0, tw = 0;
+    const physical = new Set(drivesCache.map((d) => d.name));
     for (const [dev, d] of Object.entries(io)) {
+      if (!physical.has(dev) && !dev.startsWith("md")) continue;
       const h = diskHist[dev] || (diskHist[dev] = { r: [], w: [] });
       h.r.push(d.read || 0); h.w.push(d.write || 0);
       if (h.r.length > DISK_HIST) { h.r.shift(); h.w.shift(); }
-      tr += d.read || 0; tw += d.write || 0;
+      if (physical.has(dev)) { tr += d.read || 0; tw += d.write || 0; }   // arrays would double count
     }
+    document.querySelectorAll(".array[data-md]").forEach((el) => {
+      const d = io[el.dataset.md]; if (!d) return;
+      el.querySelector("[data-aio]").textContent = `${rate(d.read)} read · ${rate(d.write)} write`;
+    });
     const tot = $("diskTotals");
     if (tot) tot.innerHTML = `<span><i class="dot s1"></i>Read <b>${rate(tr)}</b></span><span><i class="dot s2"></i>Write <b>${rate(tw)}</b></span>`;
     const c1 = css("--s1"), c2 = css("--s2");
@@ -722,6 +767,7 @@
         <div class="p-sub"><span>▼ <b>${bytes(v.rx, 2)}</b></span><span>ratio <b>${ratio(v)}</b></span></div>
       </div>`).join("");
     renderBars(t.days);
+    renderHours(t.hours);
     renderWeekTable(t.days, t.last7);
   }
 
@@ -732,23 +778,30 @@
     return m * 1.2;
   }
 
-  function renderBars(days) {
-    const max = niceMax(Math.max(...days.map((d) => Math.max(d.tx, d.rx))));
-    const best = days.reduce((a, d, i) => (d.tx > days[a].tx ? i : a), 0);
+  const HOUR = new Intl.DateTimeFormat(undefined, { hour: "numeric" });
+  const HOUR_LONG = new Intl.DateTimeFormat(undefined, { weekday: "short", hour: "numeric", minute: "2-digit" });
+  function renderBarChart(el, items, labelOf, isNow, labelEvery) {
+    const max = niceMax(Math.max(...items.map((d) => Math.max(d.tx, d.rx))));
+    const best = items.reduce((a, d, i) => (d.tx > items[a].tx ? i : a), 0);
     let html = "";
     for (let k = 0; k <= 4; k++) {
       html += `<div class="gl${k ? "" : " base"}" style="bottom:${24 + (186 * k) / 4}px"><span>${k ? bytes((max * k) / 4, 0) : "0"}</span></div>`;
     }
-    html += `<div class="cols">` + days.map((d, i) => {
-      const up = (d.tx / max) * 100, down = (d.rx / max) * 100;
-      const isToday = i === days.length - 1;
-      // direct label only on the busiest upload day and today, never on every bar
-      const label = (i === best || isToday) && d.tx > 0 ? `<span class="vl" style="bottom:calc(${up}% + 6px)">${bytes(d.tx, 1)}</span>` : "";
-      return `<div class="col${isToday ? " today" : ""}" data-i="${i}">
-        ${label}<i class="up" style="height:${up}%"></i><i class="down" style="height:${down}%"></i>
-        <span class="xl">${isToday ? "Today" : DAY.format(parseDay(d.date))}</span></div>`;
+    html += `<div class="cols" style="grid-template-columns:repeat(${items.length},1fr)">` + items.map((d, i) => {
+      const up = (d.tx / max) * 100, down = (d.rx / max) * 100, now = isNow(i);
+      // direct label only on the busiest upload bar and the current one, never on every bar
+      const label = (i === best || now) && d.tx > 0 ? `<span class="vl" style="bottom:calc(${up}% + 6px)">${bytes(d.tx, 1)}</span>` : "";
+      const xl = i % labelEvery === 0 || now ? `<span class="xl">${labelOf(d, i)}</span>` : "";
+      return `<div class="col${now ? " today" : ""}" data-i="${i}">${label}<i class="up" style="height:${up}%"></i><i class="down" style="height:${down}%"></i>${xl}</div>`;
     }).join("") + `</div>`;
-    $("bars").innerHTML = html;
+    el.innerHTML = html;
+  }
+  function renderBars(days) {
+    renderBarChart($("bars"), days, (d, i) => (i === days.length - 1 ? "Today" : DAY.format(parseDay(d.date))), (i) => i === days.length - 1, 1);
+  }
+  function renderHours(hours) {
+    if (!hours || !hours.length) { $("hourBars").innerHTML = `<div class="empty">No hourly data from vnstat yet</div>`; return; }
+    renderBarChart($("hourBars"), hours, (d, i) => (i === hours.length - 1 ? "Now" : HOUR.format(new Date(d.time))), (i) => i === hours.length - 1, 3);
   }
 
   function renderWeekTable(days, sum) {
@@ -759,6 +812,15 @@
   }
 
   if (S.admin) {
+    $("hourBars").addEventListener("pointermove", (e) => {
+      const col = e.target.closest(".col"); if (!col || !traffic || !traffic.hours) return hideTip();
+      const d = traffic.hours[+col.dataset.i], end = new Date(new Date(d.time).getTime() + 3600000);
+      showTip(`<div class="t-title">${HOUR_LONG.format(new Date(d.time))} – ${HOUR.format(end)}</div>
+        <div class="t-row"><span><i class="dot s2"></i>Upload</span><b>${bytes(d.tx, 2)}</b></div>
+        <div class="t-row"><span><i class="dot s1"></i>Download</span><b>${bytes(d.rx, 2)}</b></div>
+        <div class="t-row"><span>Average up</span><b>${mbps(d.tx / 3600)}</b></div>`, e.clientX, e.clientY);
+    });
+    $("hourBars").addEventListener("pointerleave", hideTip);
     $("bars").addEventListener("pointermove", (e) => {
       const col = e.target.closest(".col"); if (!col || !traffic) return hideTip();
       const d = traffic.days[+col.dataset.i];
@@ -770,9 +832,11 @@
     $("bars").addEventListener("pointerleave", hideTip);
     document.querySelectorAll("#trafficCard .seg button").forEach((b) => b.addEventListener("click", () => {
       document.querySelectorAll("#trafficCard .seg button").forEach((x) => x.setAttribute("aria-selected", String(x === b)));
-      const table = b.dataset.view === "table";
-      $("bars").hidden = table; $("weekTable").hidden = !table;
+      const v = b.dataset.view;
+      $("bars").hidden = v !== "chart"; $("hourBars").hidden = v !== "hours"; $("weekTable").hidden = v !== "table";
+      $("weekTitle").textContent = v === "hours" ? "Last 24 hours" : "Last 7 days";
     }));
+
   }
 
   /* App icons: the letter is always drawn underneath (CSS ::before); a broken image is simply removed,
@@ -817,6 +881,40 @@
       dot.className = "side-dot" + (st ? (st.active ? " on" : " off") : "");
       a.title = a.querySelector(".side-label").textContent + (st ? (st.active ? " · running" : " · stopped") : "");
     });
+  }
+
+  /* ============================================================ processes (btop-style) */
+  let procSort = "cpu", procData = null, procVisible = false;
+  function renderProcs() {
+    if (!procData) return;
+    const q = ($("procSearch").value || "").toLowerCase();
+    let list = procData.procs.filter((p) => !q || p.name.toLowerCase().includes(q) || (p.cmd || "").toLowerCase().includes(q) || p.user.includes(q) || String(p.pid) === q);
+    list.sort((a, b) => procSort === "cpu" ? (b.cpu - a.cpu) || (b.rss - a.rss) : b.rss - a.rss);
+    list = list.slice(0, 20);
+    const maxCpu = Math.max(100, ...list.map((p) => p.cpu)), memTotal = (lastLive && lastLive.mem.total) || 1;
+    $("procs").innerHTML = list.map((p) => {
+      const cl = lvl(p.cpu, 80, 200);
+      return `<div class="proc-row" role="row" title="${esc(p.cmd || p.name)}">
+        <span class="num mono">${p.pid}</span>
+        <span class="pname"><b>${esc(p.name)}</b><small>${esc((p.cmd || "").replace(/^\S*\//, ""))}</small></span>
+        <span class="puser">${esc(p.user)}</span>
+        <span class="num">${p.threads}</span>
+        <span class="pbar"><span class="bar"><i style="width:${Math.min(100, (p.cpu / maxCpu) * 100)}%;background:${cl === "good" ? css("--s1") : levelColor(cl)}"></i></span><b>${p.cpu.toFixed(1)}%</b></span>
+        <span class="pbar"><span class="bar"><i style="width:${Math.min(100, (p.rss / memTotal) * 100 * 4)}%;background:${css("--s3")}"></i></span><b>${bytes(p.rss)}</b></span>
+      </div>`;
+    }).join("") || `<div class="empty">No matching processes</div>`;
+    $("procNote").textContent = `${procData.count} processes · top ${list.length} by ${procSort === "cpu" ? "CPU (100 % = one core)" : "memory"}${procData.warming ? " · measuring…" : ""}`;
+  }
+  async function loadProcs() {
+    if (!procVisible || document.hidden) return;
+    procData = await getJSON(S.api.procs); renderProcs();
+  }
+  if (S.admin) {
+    new IntersectionObserver((ents) => { procVisible = ents.some((e) => e.isIntersecting); if (procVisible) loadProcs().catch(() => {}); }).observe($("procCard"));
+    document.querySelectorAll("[data-psort]").forEach((b) => b.addEventListener("click", () => {
+      procSort = b.dataset.psort; document.querySelectorAll("[data-psort]").forEach((x) => x.setAttribute("aria-selected", String(x === b))); renderProcs();
+    }));
+    $("procSearch").addEventListener("input", renderProcs);
   }
 
   /* ============================================================ apps */
@@ -919,6 +1017,7 @@
     every(LIVE_MS, async () => renderLive(await getJSON(S.api.live)));
     every(60000, loadStorage);
     every(300000, loadTraffic);
+    every(3000, loadProcs);
     every(300000, loadPlace);
     if (store.get("wxMode", "server") === "device") setTimeout(() => deviceWeather(false), 400);
     every(600000, () => store.get("wxMode", "server") === "device" ? deviceWeather(false) : null);
