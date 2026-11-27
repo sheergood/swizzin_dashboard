@@ -15,6 +15,18 @@ seedbox servers. Format follows [Keep a Changelog](https://keepachangelog.com/en
   syntax, smoke test.
 
 ### Added
+- **Login page: constellation theme** — drifting stars that link to their neighbours and to the
+  pointer, twinkling glow stars and the odd shooting star over a deep-night nebula, behind the
+  frosted liquid-glass card. Pauses in background tabs, draws one still frame with reduced motion,
+  and turns the refraction filter off by itself if the device can't hold ~35 fps.
+- **Weather icons from netdiag** (`static/js/wxicons.js`) — all 29 Open-Meteo weather codes, day
+  and night, animated, with the real moon phase at night; used in the status bar and a large
+  version in the weather popover.
+- **Compact drives** — one row per drive (type, model, wear % for SSD/NVMe or bad-sector count
+  for HDD, temperature, health). Click a row for the full wear level or SMART attribute table,
+  power-on time and live read/write in a popover.
+- **Compact Memory & storage** card (tighter rows, scrolling filesystem list); it now always
+  sits beside the Security card, whose ban list scrolls after ~8 entries.
 - **App sidebar** like the original panel: every installed app with its icon, name and a
   running/stopped dot, opening in a new tab. A button at the bottom collapses it to icons only
   (remembered per browser); on phones it becomes a slide-in drawer opened from the ☰ button.
@@ -93,5 +105,8 @@ seedbox servers. Format follows [Keep a Changelog](https://keepachangelog.com/en
 - `/` now renders the glass dashboard; the old template moved to `templates/classic.html`.
 
 ### Fixed
+- App icons could stay blank: the grid was rebuilt every 10 s (lazy images were replaced before
+  loading) and relied on inline `onerror`. Cards are now built once and updated in place, and
+  every icon has the app's initial underneath that shows if the image doesn't load.
 - `core/util.py`: invalid `\.` escape in the IP-mount regex (SyntaxWarning on Python 3.12+).
 - `.gitignore` now excludes `__pycache__/` and the per-server `swizzin.cfg`.

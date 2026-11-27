@@ -306,7 +306,7 @@
     const box = $("gpus");
     $("gpuNote").textContent = gpus.length ? `${gpus.length} device${gpus.length > 1 ? "s" : ""} detected` : "No GPU detected";
     const card = $("gpuCard"), memCard = $("memCard");
-    card.hidden = !gpus.length; memCard.dataset.span = gpus.length ? "7" : "12";
+    card.hidden = !gpus.length;   // memory (7) + security (5) share a row either way
     if (!gpus.length) {
       if (!box.dataset.empty) box.innerHTML = `<div class="empty">No discrete or integrated GPU is exposed to this server.<br>NVIDIA cards appear here once <code>nvidia-smi</code> is installed; AMD and Intel are read from sysfs.</div>`;
       box.dataset.empty = "1"; return;
@@ -396,70 +396,72 @@
     </div>`;
   }
 
+  /* Drives: one compact row each; the full wear / SMART detail opens in a popover on click. */
+  function driveDetail(dr) {
+    const h = driveHealth(dr), hot = dr.kind === "NVMe" ? [70, 80] : dr.kind === "HDD" ? [50, 60] : [60, 70];
+    const tl = lvl(dr.temp, hot[0], hot[1]), isHdd = dr.kind === "HDD";
+    const metrics = isHdd ? [
+      ["Temp", dr.temp != null ? `${dr.temp}°C` : "–", tl && tl !== "good" ? LVL_TEXT[tl] : ""],
+      ["Power-on", hours(dr.power_on_hours)], ["Start/stops", dr.power_cycles ?? "–"],
+    ] : [
+      ["Temp", dr.temp != null ? `${dr.temp}°C` : "–", tl && tl !== "good" ? LVL_TEXT[tl] : ""],
+      ["Power-on", hours(dr.power_on_hours)],
+      [dr.kind === "NVMe" ? "Spare" : "Read", dr.kind === "NVMe" ? pct(dr.spare) : dr.read != null ? bytes(dr.read) : "–"],
+    ];
+    const body = !dr.smart ? `<div class="empty">No SMART data for this drive yet — <code>swizzin-smart.timer</code> refreshes every 10 min.</div>`
+      : isHdd ? hddSmart(dr) : ssdWear(dr);
+    return `<div class="drive-top">
+        <div class="drive-title"><b><span class="kind">${esc(dr.kind)}</span>${esc(dr.model)}</b>
+          <small>/dev/${esc(dr.name)} · ${bytes(dr.capacity, 2)}${dr.rpm ? " · " + dr.rpm + " rpm" : ""}${dr.firmware ? " · fw " + esc(dr.firmware) : ""}</small></div>
+        <span class="badge ${h.cls}">${h.text}</span>
+      </div>
+      ${body}
+      <div class="metrics">${metrics.map(([k, v, note]) => `<div class="metric"><small>${k}${note ? " · " + note : ""}</small><b>${v}</b></div>`).join("")}</div>
+      <div class="io" data-dev="${esc(dr.name)}"><span>Read <b data-io="read">–</b></span><span>Write <b data-io="write">–</b></span><span>Busy <b data-io="busy">–</b></span></div>
+      ${h.issues && h.issues.length ? `<div class="warnline">⚠ ${esc(h.issues.join(" · "))}</div>` : ""}`;
+  }
+
   function renderDrives() {
     const box = $("drives");
     const anySmart = drivesCache.some((d) => d.smart);
-    $("smartNote").textContent = anySmart ? "SSDs: wear level · HDDs: SMART attributes · refreshed every 10 min by swizzin-smart.timer"
-      : "Live I/O only — install smartmontools and enable swizzin-smart.timer for wear level and SMART";
-    box.innerHTML = drivesCache.map((dr) => {
+    $("smartNote").textContent = anySmart ? "Click a drive for wear level (SSD) or SMART attributes (HDD)"
+      : "Live I/O only — enable swizzin-smart.timer for wear level and SMART";
+    box.innerHTML = drivesCache.map((dr, i) => {
       const h = driveHealth(dr), hot = dr.kind === "NVMe" ? [70, 80] : dr.kind === "HDD" ? [50, 60] : [60, 70];
       const tl = lvl(dr.temp, hot[0], hot[1]);
-      const isHdd = dr.kind === "HDD";
-      const metrics = isHdd ? [
-        ["Temp", dr.temp != null ? `${dr.temp}°C` : "–", tl && tl !== "good" ? LVL_TEXT[tl] : ""],
-        ["Power-on", hours(dr.power_on_hours)], ["Start/stops", dr.power_cycles ?? "–"],
-      ] : [
-        ["Temp", dr.temp != null ? `${dr.temp}°C` : "–", tl && tl !== "good" ? LVL_TEXT[tl] : ""],
-        ["Power-on", hours(dr.power_on_hours)],
-        [dr.kind === "NVMe" ? "Spare" : "Read", dr.kind === "NVMe" ? pct(dr.spare) : dr.read != null ? bytes(dr.read) : "–"],
-      ];
-      const body = !dr.smart ? "" : isHdd ? hddSmart(dr) : ssdWear(dr);
-      return `<article class="drive${isHdd ? " hdd" : ""}" data-dev="${esc(dr.name)}">
-        <div class="drive-top">
-          <div class="drive-title"><b><span class="kind">${esc(dr.kind)}</span>${esc(dr.model)}</b>
-            <small>/dev/${esc(dr.name)} · ${bytes(dr.capacity, 2)}${dr.rpm ? " · " + dr.rpm + " rpm" : ""}${dr.firmware ? " · fw " + esc(dr.firmware) : ""}</small></div>
-          <span class="badge ${h.cls}">${h.text}</span>
-        </div>
-        ${body}
-        <div class="metrics">${metrics.map(([k, v, note]) => `<div class="metric"><small>${k}${note ? " · " + note : ""}</small><b>${v}</b></div>`).join("")}</div>
-        <div class="io"><span>Read <b data-io="read">–</b></span><span>Write <b data-io="write">–</b></span><span>Busy <b data-io="busy">–</b></span></div>
-        ${h.issues && h.issues.length ? `<div class="warnline">⚠ ${esc(h.issues.join(" · "))}</div>` : ""}
-      </article>`;
+      let key = "";
+      if (dr.kind !== "HDD" && dr.wear_used != null) {
+        const l = lvl(dr.wear_used, 75, 90);
+        key = `<span class="dr-wear" title="${100 - dr.wear_used}% life left"><span class="bar"><i style="width:${Math.max(dr.wear_used, 1)}%;background:${l === "good" ? css("--good") : levelColor(l)}"></i></span><b>${dr.wear_used}%</b><small>wear</small></span>`;
+      } else if (dr.kind === "HDD" && dr.smart) {
+        const bad = (dr.realloc || 0) + (dr.pending || 0) + (dr.uncorrectable || 0);
+        key = `<span class="dr-wear"><b class="${bad ? "s-warn" : "s-good"}">${bad ? bad + " bad" : "0 bad"}</b><small>sectors</small></span>`;
+      } else key = `<span class="dr-wear"><small>no SMART</small></span>`;
+      return `<button class="drive-row" data-pop="popDrive" data-drive="${i}" aria-haspopup="dialog" aria-expanded="false" data-dev="${esc(dr.name)}">
+        <span class="kind">${esc(dr.kind)}</span>
+        <span class="dr-name"><b>${esc(dr.model)}</b><small>${esc(dr.name)} · ${bytes(dr.capacity, 1)}</small></span>
+        ${key}
+        <span class="dr-temp ${tl && tl !== "good" ? "s-" + tl : ""}">${dr.temp != null ? dr.temp + "°" : "–"}</span>
+        <span class="badge ${h.cls}">${h.text}</span>
+      </button>`;
     }).join("") || `<div class="empty">No physical drives found</div>`;
+    if (openPop && openPop.pop.id === "popDrive") closePop();
     if (lastLive) renderDriveIO(lastLive.disk_io);
   }
 
   function renderDriveIO(io) {
-    document.querySelectorAll(".drive").forEach((el) => {
+    document.querySelectorAll("#popDrive .io").forEach((el) => {
       const d = io[el.dataset.dev]; if (!d) return;
-      el.querySelector('[data-io="read"]').textContent = rate(d.read);
-      el.querySelector('[data-io="write"]').textContent = rate(d.write);
-      el.querySelector('[data-io="busy"]').textContent = pct(d.busy);
+      const set = (k, v) => { const n = el.querySelector(`[data-io="${k}"]`); if (n) n.textContent = v; };
+      set("read", rate(d.read)); set("write", rate(d.write)); set("busy", pct(d.busy));
     });
   }
 
   /* ============================================================ server identity */
   let clock = null;          // { skew, tz, offsetMin }
-  /* weather glyphs: drawn SVG so they look the same on every OS (no emoji font needed) */
-  const SUN = `<circle cx="24" cy="24" r="9" fill="url(#gSun)"/><g stroke="#ffcf5c" stroke-width="2.6" stroke-linecap="round">${[0, 45, 90, 135, 180, 225, 270, 315].map((a) => `<line x1="24" y1="7" x2="24" y2="10.5" transform="rotate(${a} 24 24)"/>`).join("")}</g>`;
-  const MOON = `<path d="M30 8a15 15 0 1 0 10 25A12 12 0 0 1 30 8z" fill="url(#gMoon)"/>`;
-  const CLOUD = (y = 0, o = 1) => `<path transform="translate(0 ${y})" opacity="${o}" d="M15 40h20a8 8 0 0 0 .8-16A11 11 0 0 0 14.6 27 6.6 6.6 0 0 0 15 40z" fill="url(#gCloud)" stroke="rgba(255,255,255,.55)" stroke-width="1"/>`;
-  const DROPS = (n) => `<g stroke="#5aa9ff" stroke-width="2.4" stroke-linecap="round">${[16, 24, 32].slice(0, n).map((x) => `<line x1="${x}" y1="42" x2="${x - 2}" y2="47"/>`).join("")}</g>`;
-  const FLAKES = `<g fill="#e8f3ff">${[16, 24, 32].map((x, i) => `<circle cx="${x}" cy="${44 + (i % 2) * 2}" r="1.8"/>`).join("")}</g>`;
-  const BOLT = `<path d="M25 38l-5 8h5l-2 6 7-10h-5l3-4z" fill="#ffd34d"/>`;
-  const FOG = `<g stroke="rgba(230,236,248,.8)" stroke-width="2.4" stroke-linecap="round"><line x1="10" y1="42" x2="38" y2="42"/><line x1="14" y1="47" x2="34" y2="47"/></g>`;
-  const WX_SVG = (icon, day) => {
-    const orb = day ? `<g transform="translate(-2 -2) scale(.72)">${SUN}</g>` : `<g transform="translate(0 -1) scale(.7)">${MOON}</g>`;
-    const body = {
-      clear: day ? SUN : MOON, partly: orb + CLOUD(2), cloud: CLOUD(-6, .7) + CLOUD(2), fog: CLOUD(-6) + FOG,
-      drizzle: (day ? orb : "") + CLOUD(-4) + DROPS(2), rain: CLOUD(-4) + DROPS(3), snow: CLOUD(-4) + FLAKES, storm: CLOUD(-6) + BOLT,
-    }[icon] || CLOUD(0);
-    return `<svg viewBox="0 0 48 52" width="58" height="58"><defs>
-      <radialGradient id="gSun" cx=".4" cy=".35"><stop offset="0" stop-color="#fff3b0"/><stop offset="1" stop-color="#ffb020"/></radialGradient>
-      <linearGradient id="gMoon" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#f4f1ff"/><stop offset="1" stop-color="#b9b3e6"/></linearGradient>
-      <linearGradient id="gCloud" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffffff" stop-opacity=".95"/><stop offset="1" stop-color="#b8c4dc" stop-opacity=".85"/></linearGradient>
-      </defs>${body}</svg>`;
-  };
+  /* weather icons: netdiag's set (static/js/wxicons.js), line style, real moon phase at night */
+  const WXI = window.SWZ_WX;
+  const wxSvg = (w, size) => WXI ? WXI.wxIcon(w.code, w.is_day, "line", size, w.is_day ? null : WXI.moonNow(w.lat)) : "";
   const fmtOffset = (m) => `UTC${m < 0 ? "−" : "+"}${String(Math.floor(Math.abs(m) / 60)).padStart(2, "0")}:${String(Math.abs(m) % 60).padStart(2, "0")}`;
   function zoneOk(tz) { try { new Intl.DateTimeFormat(undefined, { timeZone: tz }); return true; } catch (_) { return false; } }
   function hm(min) { const a = Math.abs(min), h = Math.floor(a / 60), m = a % 60; return (h ? h + "h" : "") + (m ? (h ? " " : "") + m + "m" : h ? "" : "0m"); }
@@ -512,7 +514,7 @@
   let serverWeather = null, serverLookups = true;
   function renderWeather(w, lookups) {
     if (!w) {
-      $("wxIcon").innerHTML = ""; $("wxTemp").textContent = "–";
+      $("wxIcon").innerHTML = ""; $("wxIconBig").innerHTML = ""; $("wxTemp").textContent = "–"; $("wxTempBig").textContent = "–";
       $("wxText").textContent = lookups ? "Weather unavailable" : "Lookups disabled";
       $("wxPlace").textContent = ""; $("wxPlace2").textContent = ""; $("wxFeels").textContent = "–";
       $("wxFoot").textContent = ""; return;
@@ -520,10 +522,11 @@
     const T = (v) => (v == null ? "–" : Math.round(v) + w.units.temp);
     const timeOnly = (iso) => (iso ? iso.slice(11, 16) : "–");
     $("wxPlace").textContent = w.place || ""; $("wxPlace2").textContent = w.place || "";
-    $("wxIcon").innerHTML = WX_SVG(w.icon, w.is_day);
-    $("wxTemp").textContent = T(w.temp);
-    $("wxText").textContent = w.text;
-    $("wxFeels").textContent = `${w.text} · feels like ${T(w.feels)}`;
+    const longName = (WXI && WXI.WX_CODES[w.code]) || w.text, shortName = (WXI && WXI.WX_SHORT[w.code]) || w.text;
+    $("wxIcon").innerHTML = wxSvg(w, 28); $("wxIconBig").innerHTML = wxSvg(w, 64);
+    $("wxTemp").textContent = T(w.temp); $("wxTempBig").textContent = T(w.temp);
+    $("wxText").textContent = shortName;
+    $("wxFeels").textContent = `${longName} · feels like ${T(w.feels)}`;
     $("wxFoot").innerHTML = [
       ["H/L", `${T(w.high)} / ${T(w.low)}`], ["Humidity", w.humidity != null ? w.humidity + "%" : "–"],
       ["Wind", w.wind != null ? `${Math.round(w.wind)} ${w.units.wind}` : "–"],
@@ -579,7 +582,10 @@
     if (btn) {
       const pop = $(btn.dataset.pop), same = openPop && openPop.pop === pop;
       closePop();
-      if (!same) { pop.hidden = false; placePop(pop, btn.closest(".sb") || btn); btn.setAttribute("aria-expanded", "true"); openPop = { pop, btn }; }
+      if (!same) {
+        if (btn.dataset.drive != null) { pop.innerHTML = driveDetail(drivesCache[+btn.dataset.drive]); if (lastLive) renderDriveIO(lastLive.disk_io); }
+        pop.hidden = false; placePop(pop, btn.closest(".sb") || btn); btn.setAttribute("aria-expanded", "true"); openPop = { pop, btn };
+      }
       return;
     }
     if (openPop && !openPop.pop.contains(e.target)) closePop();
@@ -709,6 +715,18 @@
     }));
   }
 
+  /* App icons: the letter is always drawn underneath (CSS ::before); a broken image is simply removed,
+     so the tile never ends up empty. One capture listener works for every <img>, no inline handlers. */
+  const iconHTML = (cls, p) => `<span class="${cls}" data-letter="${esc((p.pretty_name || "?")[0])}"><img src="${S.iconBase}${encodeURIComponent(p.img)}.png" alt="" decoding="async"></span>`;
+  document.addEventListener("load", (e) => {
+    const t = e.target;
+    if (t && t.tagName === "IMG" && t.parentElement && t.parentElement.dataset.letter != null) t.parentElement.classList.add("has-img");
+  }, true);
+  document.addEventListener("error", (e) => {
+    const t = e.target;
+    if (t && t.tagName === "IMG" && t.parentElement && t.parentElement.dataset.letter != null) t.remove();
+  }, true);
+
   /* ============================================================ sidebar */
   function applySide() {
     const mini = store.get("side", "full") === "mini";
@@ -724,8 +742,7 @@
     S.pages.filter((p) => p.url).sort((a, b) => a.pretty_name.localeCompare(b.pretty_name)).forEach((p) => {
       const a = document.createElement("a");
       a.className = "side-item"; a.href = p.url; a.target = "_blank"; a.rel = "noopener"; a.title = p.pretty_name; a.dataset.app = p.name;
-      a.innerHTML = `<span class="side-ico"><img src="${S.iconBase}${encodeURIComponent(p.img)}.png" alt="" loading="lazy"
-        onerror="this.replaceWith(document.createTextNode('${esc(p.pretty_name[0])}'))"><i class="side-dot"></i></span><span class="side-label">${esc(p.pretty_name)}</span>`;
+      a.innerHTML = iconHTML("side-ico", p).replace("</span>", '<i class="side-dot"></i></span>') + `<span class="side-label">${esc(p.pretty_name)}</span>`;
       list.appendChild(a);
     });
     applySide();
@@ -746,23 +763,40 @@
   let statusMap = {};
   const apps = S.pages.slice().sort((a, b) => a.pretty_name.localeCompare(b.pretty_name));
 
+  const cardCache = new Map();
+  function appCard(a) {
+    let card = cardCache.get(a.name);
+    if (card) return card;
+    card = document.createElement("div");
+    card.className = "app"; card.dataset.app = a.name;
+    const name = a.url ? `<a class="app-name" href="${esc(a.url)}" target="_blank" rel="noopener">${esc(a.pretty_name)}</a>` : `<span class="app-name">${esc(a.pretty_name)}</span>`;
+    card.innerHTML = `${iconHTML("app-icon", a)}<div style="min-width:0">${name}<span class="app-state"></span></div><div class="app-actions"></div>`;
+    cardCache.set(a.name, card);
+    return card;
+  }
+  function paintApp(card, a) {
+    const st = statusMap[a.name], ctrl = a.systemd && st;
+    const stEl = card.querySelector(".app-state"), act = card.querySelector(".app-actions");
+    stEl.className = "app-state " + (!st ? "" : st.active ? "on" : "off");
+    stEl.textContent = !st ? (a.systemd ? "Checking…" : "Web app") : st.active ? "Running" : "Stopped";
+    const sig = ctrl ? `c${st.enabled ? 1 : 0}` : "-";
+    if (act.dataset.sig === sig || act.contains(document.activeElement)) return;   // unchanged, or user is interacting
+    act.dataset.sig = sig;
+    act.innerHTML = ctrl ? `
+      <button class="icon-btn" data-act="restart" title="Restart ${esc(a.pretty_name)}" aria-label="Restart ${esc(a.pretty_name)}">↻</button>
+      <label class="switch" title="${st.enabled ? "Enabled at boot — click to stop & disable" : "Disabled — click to enable & start"}">
+        <input type="checkbox" data-act="toggle" ${st.enabled ? "checked" : ""} aria-label="Enable ${esc(a.pretty_name)}"><i></i></label>` : "";
+  }
   function renderApps() {
     const q = ($("svcSearch").value || "").toLowerCase();
     const list = apps.filter((a) => !q || a.pretty_name.toLowerCase().includes(q) || a.name.includes(q));
-    $("apps").innerHTML = list.map((a) => {
-      const st = statusMap[a.name], ctrl = a.systemd && st;
-      const state = !st ? "" : st.active ? "on" : "off";
-      const label = !st ? (a.systemd ? "Checking…" : "Web app") : st.active ? "Running" : "Stopped";
-      const name = a.url ? `<a class="app-name" href="${esc(a.url)}" target="_blank" rel="noopener">${esc(a.pretty_name)}</a>` : `<span class="app-name">${esc(a.pretty_name)}</span>`;
-      return `<div class="app" data-app="${esc(a.name)}">
-        <div class="app-icon"><img src="${S.iconBase}${encodeURIComponent(a.img)}.png" alt="" loading="lazy" onerror="this.replaceWith(document.createTextNode('${esc(a.pretty_name[0])}'))"></div>
-        <div style="min-width:0">${name}<span class="app-state ${state}">${label}</span></div>
-        <div class="app-actions">${ctrl ? `
-          <button class="icon-btn" data-act="restart" title="Restart ${esc(a.pretty_name)}" aria-label="Restart ${esc(a.pretty_name)}">↻</button>
-          <label class="switch" title="${st.enabled ? "Enabled at boot — click to stop & disable" : "Disabled — click to enable & start"}">
-            <input type="checkbox" data-act="toggle" ${st.enabled ? "checked" : ""} aria-label="Enable ${esc(a.pretty_name)}"><i></i></label>` : ""}
-        </div></div>`;
-    }).join("") || `<div class="empty">No matching applications</div>`;
+    const box = $("apps"), want = list.map(appCard);
+    // only touch the DOM order when the visible set changed (filtering); otherwise just repaint states
+    if (box.children.length !== want.length || want.some((c, i) => box.children[i] !== c)) {
+      box.replaceChildren(...want);
+      if (!want.length) box.innerHTML = `<div class="empty">No matching applications</div>`;
+    }
+    list.forEach((a) => paintApp(appCard(a), a));
     const tracked = Object.values(statusMap);
     const up = tracked.filter((s) => s.active).length;
     $("svcSummary").textContent = tracked.length ? `${up} of ${tracked.length} services running · ${apps.length} installed` : `${apps.length} installed`;
@@ -773,7 +807,7 @@
       const list = await getJSON(S.api.status);
       statusMap = {}; list.forEach((s) => (statusMap[s.name] = s));
     } catch (_) { /* keep previous */ }
-    if (!document.querySelector(".app-actions :focus")) renderApps();
+    renderApps();
     sideDots();
   }
 

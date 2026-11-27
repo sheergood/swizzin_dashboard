@@ -87,6 +87,7 @@
       </div>
     </section>
 
+    <div class="pop pop-wide glass" id="popDrive" role="dialog" aria-label="Drive health" hidden></div>
     <div class="pop glass" id="popClock" role="dialog" aria-label="Server time" hidden>
       <div class="pop-head"><span class="label">Server time</span><span class="muted" id="tzName"></span></div>
       <div class="pop-big" id="clockDate">–</div>
@@ -101,7 +102,7 @@
     </div>
     <div class="pop glass" id="popWx" role="dialog" aria-label="Weather" hidden>
       <div class="pop-head"><span class="label">Weather</span><span class="muted" id="wxPlace2"></span></div>
-      <div class="kv1"><span id="wxFeels">–</span></div>
+      <div class="wx-hero"><span class="wx-big" id="wxIconBig" aria-hidden="true"></span><div><b id="wxTempBig">–</b><span id="wxFeels">–</span></div></div>
       <div class="wx-foot" id="wxFoot"></div>
       <p class="muted pop-note">📍 switches between the server's location and this device's.</p>
     </div>
@@ -189,7 +190,7 @@
       <div class="card-head">
         <div><h2>Drives</h2><p class="muted" id="smartNote">SMART health, wear and live I/O</p></div>
       </div>
-      <div class="drives" id="drives"></div>
+      <div class="drives-list" id="drives"></div>
     </section>
 
     <!-- GPU -->
@@ -259,6 +260,7 @@
       }
     };
   </script>
+  <script src="{{ url_for('static', filename='js/wxicons.js') }}"></script>
   <script src="{{ url_for('static', filename='js/glass.js') }}"></script>
 </body>
 </html>

@@ -187,6 +187,7 @@ def _lookup_weather(lat, lon, imperial):
             "rain_chance": first("precipitation_probability_max"),
             "sunrise": first("sunrise"), "sunset": first("sunset"),
             "units": {"temp": "°F" if imperial else "°C", "wind": "mph" if imperial else "km/h"},
+            "lat": lat, "lon": lon,
             "local_tz": r.get("timezone")}
 
 
