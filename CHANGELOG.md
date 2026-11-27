@@ -3,6 +3,13 @@
 Fork of [liaralabs/swizzin_dashboard](https://github.com/liaralabs/swizzin_dashboard), tuned for
 seedbox servers. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [sheergood-13] — Nov 28 2026
+
+### Removed
+- **Torrent racing** card and **Alerts to Discord** (sheergood-12), on request: not needed. The
+  dashboard is back to exactly what it was in sheergood-11. Leftover settings files on the server
+  (including a saved Discord webhook) are deleted by the swizzin fork's `box update`.
+
 ## [sheergood-12] — Nov 28 2026
 
 ### Added
