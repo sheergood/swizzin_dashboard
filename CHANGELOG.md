@@ -5,6 +5,14 @@ seedbox servers. Format follows [Keep a Changelog](https://keepachangelog.com/en
 
 ## [sheergood-2] — Nov 27 2026
 
+### Added
+- **Weekly upstream sync** (`.github/workflows/upstream-sync.yml`, Mondays 03:41 UTC): merges new
+  `liaralabs/swizzin_dashboard` commits into the test branch `upstream-sync`, runs the full CI
+  (Python 3.8/3.10/3.12, Python 3.6 compatibility, JS syntax, unit and smoke tests) and
+  fast-forwards `master`/`custom` only if everything passes. A conflict, a failed test or an
+  upstream change to a workflow file opens an issue instead and leaves every branch alone. Run it
+  by hand from Actions → upstream-sync (tick *test only* to rehearse).
+
 ### Changed
 - **Sign in button** is now liquid glass: a translucent, blurred pill tinted by the live sky
   (indigo at night, rose/gold at dawn and dusk, azure by day), with a specular highlight across

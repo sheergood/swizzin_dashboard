@@ -3,6 +3,11 @@ name: ci
 on:
   push:
   pull_request:
+  workflow_call:      # used by upstream-sync.yml to test a merge before it reaches master
+    inputs:
+      ref:
+        type: string
+        required: false
 
 jobs:
   test:
@@ -12,6 +17,8 @@ jobs:
         python: ["3.8", "3.10", "3.12"]
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python }}
