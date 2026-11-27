@@ -258,3 +258,179 @@ class Collectors(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+# ----------------------------------------------------------------------------- integrated GPU (fake sysfs)
+class IGpu(unittest.TestCase):
+    def make(self, vendor, slot, files, driver="i915", render=True):
+        root = tempfile.mkdtemp()
+        drm, devs = os.path.join(root, "drm"), os.path.join(root, "devices", slot)
+        os.makedirs(drm); os.makedirs(devs); os.makedirs(os.path.join(root, "drivers", driver))
+        os.symlink(os.path.join(root, "drivers", driver), os.path.join(devs, "driver"))
+        if render:
+            os.makedirs(os.path.join(devs, "drm", "renderD128"))
+        card = os.path.join(drm, "card0"); os.makedirs(card)
+        os.symlink(devs, os.path.join(card, "device"))
+        files = dict(files, **{"device/vendor": vendor})
+        for rel, val in files.items():
+            p = os.path.join(card, rel); os.makedirs(os.path.dirname(p), exist_ok=True)
+            with open(p, "w") as f:
+                f.write(str(val))
+        return root, card
+
+    def gpus(self, root, plex=False, plex_in_group=False):
+        inst = tempfile.mkdtemp()
+        if plex:
+            open(os.path.join(inst, ".plex.lock"), "w").close()
+        grp = os.path.join(inst, "group")
+        with open(grp, "w") as f:
+            f.write("render:x:993:%s\nvideo:x:44:\n" % ("plex" if plex_in_group else ""))
+        hw._gpu_cache.update(t=0, data=[]); hw._idle_prev.clear()
+        with mock.patch.object(hw, "DRM", os.path.join(root, "drm")), mock.patch.object(hw, "INSTALL_DIR", inst), \
+             mock.patch.object(hw, "GROUP_FILE", grp), mock.patch.object(hw.shutil, "which", return_value=None):
+            return hw._gpus()
+
+    def test_intel_igpu_detected_with_clock_and_load(self):
+        root, card = self.make("0x8086", "0000:00:02.0", {"gt/gt0/rc6_residency_ms": 1000, "gt/gt0/rps_act_freq_mhz": 350,
+                                                          "gt/gt0/rps_RP0_freq_mhz": 1150})
+        g = self.gpus(root)[0]
+        self.assertTrue(g["integrated"])
+        self.assertEqual((g["vendor"], g["name"], g["driver"]), ("Intel", "Intel integrated graphics", "i915"))
+        self.assertEqual((g["clock"], g["clock_max"]), (350, 1150))
+        self.assertEqual(g["render_node"], "/dev/dri/renderD128")
+        self.assertIsNone(g["util"])                                  # first sample: no delta yet
+        # 2 s later the GPU slept 1.5 s of them -> 25 % busy
+        g2 = {"util": None}
+        hw._intel_metrics(card, g2, 100.0)
+        with open(card + "/gt/gt0/rc6_residency_ms", "w") as f:
+            f.write("2500")
+        hw._intel_metrics(card, g2, 102.0)
+        self.assertAlmostEqual(g2["util"], 25.0)
+
+    def test_older_kernel_paths_and_clamping(self):
+        root, card = self.make("0x8086", "0000:00:02.0", {"power/rc6_residency_ms": 0, "gt_act_freq_mhz": 300, "gt_RP0_freq_mhz": 1200})
+        g = {"util": None}
+        hw._idle_prev.clear()
+        hw._intel_metrics(card, g, 10.0)
+        with open(card + "/power/rc6_residency_ms", "w") as f:
+            f.write("999999")                                       # counter jump -> clamp, never negative
+        hw._intel_metrics(card, g, 11.0)
+        self.assertEqual(g["util"], 0.0)
+        self.assertEqual((g["clock"], g["clock_max"]), (300, 1200))
+
+    def test_intel_arc_is_not_integrated(self):
+        root, _ = self.make("0x8086", "0000:03:00.0", {}, driver="xe")
+        self.assertFalse(self.gpus(root)[0]["integrated"])
+
+    def test_amd_apu_vs_discrete(self):
+        apu, _ = self.make("0x1002", "0000:05:00.0", {"device/mem_info_vram_total": 512 * 2 ** 20, "device/gpu_busy_percent": 7}, driver="amdgpu")
+        dgpu, _ = self.make("0x1002", "0000:03:00.0", {"device/mem_info_vram_total": 8 * 2 ** 30}, driver="amdgpu")
+        a = self.gpus(apu)[0]
+        self.assertTrue(a["integrated"]); self.assertEqual(a["util"], 7)
+        self.assertFalse(self.gpus(dgpu)[0]["integrated"])
+
+    def test_no_gpu_means_no_card(self):
+        root = tempfile.mkdtemp(); os.makedirs(os.path.join(root, "drm"))
+        self.assertEqual(self.gpus(root), [])
+
+    def test_plex_hw_transcode_hint(self):
+        root, _ = self.make("0x8086", "0000:00:02.0", {})
+        self.assertNotIn("hw_transcode", {k for k, v in self.gpus(root)[0].items() if v is not None})  # no Plex: no hint
+        self.assertEqual(self.gpus(root, plex=True)[0]["hw_transcode"], {"group": "render", "ok": False})
+        self.assertEqual(self.gpus(root, plex=True, plex_in_group=True)[0]["hw_transcode"], {"group": "render", "ok": True})
+
+
+# ----------------------------------------------------------------------------- Plex now playing
+import core.plex as plex  # noqa: E402
+
+FIXTURE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures", "plex_sessions.json")
+
+
+class Plex(unittest.TestCase):
+    def sessions(self):
+        with open(FIXTURE) as f:
+            return [plex.parse_session(m) for m in json.load(f)["MediaContainer"]["Metadata"]]
+
+    def test_decisions(self):
+        ep, mv, tr = self.sessions()
+        self.assertEqual((ep["decision"], ep["hw"], ep["location"]), ("direct play", False, "LAN"))
+        self.assertEqual((ep["title"], ep["subtitle"]), ("Northern Lights", "S02E07 · The Long Night"))
+        self.assertAlmostEqual(ep["progress"], 38.3)
+        self.assertEqual((mv["decision"], mv["hw"], mv["quality"], mv["out_quality"]), ("transcode", True, "4K", "1080p"))
+        self.assertIn("video hevc → h264", mv["reasons"]); self.assertIn("subtitles burned in", mv["reasons"])
+        self.assertEqual(mv["location"], "Remote")
+        self.assertEqual((tr["decision"], tr["state"], tr["throttled"]), ("direct stream", "paused", True))
+        self.assertEqual((tr["title"], tr["subtitle"]), ("Blue Hour", "Lumen · Night Drive"))
+
+    def test_garbage_session_does_not_crash(self):
+        s = plex.parse_session({"Media": "nope", "Player": None, "duration": "x"})
+        self.assertEqual(s["decision"], "direct play"); self.assertIsNone(s["progress"])
+
+    def test_states(self):
+        inst = tempfile.mkdtemp()
+        with mock.patch.object(hw, "INSTALL_DIR", inst):
+            self.assertEqual(plex.now_playing({}), {"installed": False})
+            open(os.path.join(inst, ".plex.lock"), "w").close()
+            with mock.patch.object(plex, "TOKEN_FILE", "/nonexistent"):
+                self.assertEqual(plex.now_playing({})["status"], "no_token")
+            plex._cache.update(data=None)
+            with mock.patch.object(plex.requests, "get", side_effect=plex.requests.ConnectionError()):
+                self.assertEqual(plex.now_playing({"PLEX_TOKEN": "t"})["status"], "unreachable")
+            plex._cache.update(data=None)
+            with mock.patch.object(plex.requests, "get", return_value=mock.Mock(status_code=401)):
+                self.assertEqual(plex.now_playing({"PLEX_TOKEN": "t2"})["status"], "unauthorized")
+            plex._cache.update(data=None)
+            with open(FIXTURE) as f:
+                payload = json.load(f)
+            with mock.patch.object(plex.requests, "get", return_value=mock.Mock(status_code=200, json=lambda: payload)):
+                d = plex.now_playing({"PLEX_TOKEN": "t3"})
+            self.assertEqual((d["count"], d["transcodes"], d["hw_transcodes"]), (3, 1, 1))
+            self.assertEqual(d["bandwidth"], 12450 + 8200 + 320)
+            self.assertEqual([s["state"] for s in d["sessions"]], ["playing", "playing", "paused"])
+            self.assertNotIn("t3", json.dumps(d))                  # the token never reaches the browser
+
+
+# ----------------------------------------------------------------------------- server specs
+import core.specs as specs  # noqa: E402
+
+
+class Specs(unittest.TestCase):
+    def test_board_and_junk_filtering(self):
+        dmi = tempfile.mkdtemp()
+        for k, v in {"board_vendor": "Intel Corporation", "board_name": "DH67BL", "board_version": "AAG10189-213",
+                     "product_name": "To Be Filled By O.E.M.", "bios_version": "BLH6710H.86A.0163.2018.1023.1559",
+                     "bios_date": "10/23/2018", "bios_vendor": "Intel Corp."}.items():
+            with open(os.path.join(dmi, k), "w") as f:
+                f.write(v + "\n")
+        with mock.patch.object(specs, "DMI", dmi):
+            b = specs.board()
+        self.assertEqual(b["motherboard"], "Intel DH67BL"); self.assertEqual(b["motherboard_version"], "AAG10189-213")
+        self.assertNotIn("system", b)                               # OEM placeholder dropped
+        self.assertEqual(b["bios"], "BLH6710H.86A.0163.2018.1023.1559")
+
+    def test_memory_grouping_and_vendor_codes(self):
+        mods = [{"size": 8 * 2 ** 30, "type": "DDR3", "speed": "1333 MT/s", "manufacturer": "0x2C00", "part": "16KTF1G64AZ-1G9P1"}] * 2 + \
+               [{"size": 8 * 2 ** 30, "type": "DDR3", "speed": "1333 MT/s", "manufacturer": None, "part": "16KTF1G64AZ-1G9P1"}] * 2
+        f = tempfile.NamedTemporaryFile("w", suffix=".json", delete=False); json.dump({"memory": mods}, f); f.close()
+        with mock.patch.object(specs, "HOSTINFO", f.name):
+            m = specs.memory()
+        self.assertEqual(m["modules"], 4)
+        self.assertEqual([(g["vendor"], g["count"]) for g in m["groups"]], [("Micron", 4)])
+        with mock.patch.object(specs, "HOSTINFO", "/nonexistent"):
+            self.assertEqual(specs.memory()["groups"], [])          # no root scan yet: total only
+
+    def test_storage_groups_raid_members(self):
+        drives = [{"name": "sda", "model": "SAMSUNG MZ7LM480HMHQ-00005", "capacity": 480103981056, "kind": "SSD"},
+                  {"name": "sdb", "model": "SAMSUNG MZ7LM480HMHQ-00005", "capacity": 480103981056, "kind": "SSD"}]
+        raid = {"md": [{"name": "md2", "level": "raid0"}], "zfs": [], "member_of": {"sda": ["md2"], "sdb": ["md2"]}}
+        with mock.patch.object(hw, "drives", return_value=drives), mock.patch.object(hw, "raid", return_value=raid):
+            st = specs.storage()
+        self.assertEqual(len(st), 1)
+        self.assertEqual((st[0]["count"], st[0]["raid"]), (2, [{"name": "md2", "level": "raid0"}]))
+
+    def test_specs_never_raise(self):
+        with mock.patch.object(specs, "storage", side_effect=RuntimeError("boom")):
+            specs._cache.update(data=None)
+            d = specs.specs({"SERVER_BANDWIDTH": "1Gbit/s unmetered and guaranteed"})
+        self.assertIsNone(d["storage"]); self.assertEqual(d["bandwidth_note"], "1Gbit/s unmetered and guaranteed")
+        self.assertTrue(d["hostname"])

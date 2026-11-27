@@ -98,7 +98,7 @@
       ctx.font = "11px " + css("--sans"); ctx.textBaseline = "middle"; ctx.textAlign = "right";
       for (let k = 0; k <= 4; k++) {
         const y = g.t + ph - (ph * k) / 4;
-        ctx.strokeStyle = k === 0 ? "rgba(255,255,255,.16)" : "rgba(255,255,255,.06)";
+        ctx.strokeStyle = k === 0 ? css("--grid-strong") : css("--grid");
         ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(g.l, Math.round(y) + .5); ctx.lineTo(w - g.r, Math.round(y) + .5); ctx.stroke();
         ctx.fillStyle = css("--ink-3"); ctx.fillText(this.o.fmtAxis((max * k) / 4), g.l - 8, y);
       }
@@ -126,7 +126,7 @@
       });
       if (this.hover != null) {
         const x = X(this.hover.i);
-        ctx.strokeStyle = "rgba(255,255,255,.35)"; ctx.lineWidth = 1;
+        ctx.strokeStyle = css("--cursor"); ctx.lineWidth = 1;
         ctx.beginPath(); ctx.moveTo(Math.round(x) + .5, g.t); ctx.lineTo(Math.round(x) + .5, g.t + ph); ctx.stroke();
         this.data.forEach((d, si) => {
           const v = d[this.hover.i - (HISTORY - d.length)]; if (v == null) return;
@@ -222,7 +222,9 @@
     sys = await getJSON(S.api.system);
     threads = sys.cpu_threads || 1;
     $("host").textContent = sys.hostname;
-    $("sysline").textContent = `${sys.os} · ${sys.kernel}`;
+    const osShort = (sys.os || "").replace(/ GNU\/Linux/, "").replace(/^Ubuntu (\d+\.\d+)(\.\d+)? LTS$/, "Ubuntu $1 LTS");
+    if ($("hostOs")) { $("hostOs").textContent = osShort ? " — " + osShort : ""; $("sysline").textContent = `Kernel ${sys.kernel} · ${sys.arch}`; }
+    else $("sysline").textContent = `${sys.os} · ${sys.kernel}`;
     document.title = `${sys.hostname} · swizzin`;
     $("cpuModel").textContent = `${sys.cpu_model} · ${sys.cpu_cores} cores / ${sys.cpu_threads} threads${sys.cpu_max_mhz ? " · up to " + (sys.cpu_max_mhz / 1000).toFixed(2) + " GHz" : ""}`;
     $("loadThreads").textContent = `${threads} threads`;
@@ -329,28 +331,42 @@
 
   function renderGpus(gpus) {
     const box = $("gpus");
-    $("gpuNote").textContent = gpus.length ? `${gpus.length} device${gpus.length > 1 ? "s" : ""} detected` : "No GPU detected";
-    const card = $("gpuCard"), memCard = $("memCard");
-    card.hidden = !gpus.length;   // memory (7) + security (5) share a row either way
-    if (!gpus.length) {
-      if (!box.dataset.empty) box.innerHTML = `<div class="empty">No discrete or integrated GPU is exposed to this server.<br>NVIDIA cards appear here once <code>nvidia-smi</code> is installed; AMD and Intel are read from sysfs.</div>`;
-      box.dataset.empty = "1"; return;
-    }
-    delete box.dataset.empty;
+    const igpu = gpus.length && gpus.every((g) => g.integrated);
+    $("gpuTitle").textContent = igpu ? "Integrated graphics" : "Graphics";
+    $("gpuNote").textContent = !gpus.length ? "No GPU detected"
+      : igpu ? `${gpus.map((g) => g.vendor).join(" + ")} iGPU · ${gpus[0].driver || "kernel driver"}`
+      : `${gpus.length} device${gpus.length > 1 ? "s" : ""} detected`;
+    const card = $("gpuCard");
+    // only shown when the CPU's iGPU (or a graphics card) is enabled and has a kernel driver
+    card.hidden = !gpus.length;
+    if (!gpus.length) { box.innerHTML = ""; return; }
     box.innerHTML = gpus.map((g) => {
-      const vr = g.vram_total ? (g.vram_used / g.vram_total) * 100 : null, tl = lvl(g.temp, 80, 90);
-      const metrics = [
+      const vr = g.vram_total && !g.integrated ? (g.vram_used / g.vram_total) * 100 : null, tl = lvl(g.temp, 80, 90);
+      const clockTxt = g.clock ? Math.round(g.clock) + (g.clock_max ? " / " + Math.round(g.clock_max) : "") + " MHz" : "–";
+      const metrics = g.integrated ? [
+        ["Render node", g.render_node ? g.render_node.replace("/dev/dri/", "") : "–"],
+        ["PCI", g.slot ? g.slot.replace(/^0000:/, "") : "–"], ["Driver", g.driver || "–"],
+      ] : [
         ["Load", pct(g.util)], ["Temp", g.temp != null ? Math.round(g.temp) + "°C" : "–"],
         ["Power", g.power != null ? g.power.toFixed(0) + (g.power_limit ? " / " + g.power_limit.toFixed(0) : "") + " W" : "–"],
-        ["Clock", g.clock ? Math.round(g.clock) + " MHz" : "–"], ["Fan", g.fan != null ? g.fan + "%" : g.fan_rpm ? g.fan_rpm + " rpm" : "–"],
+        ["Clock", clockTxt], ["Fan", g.fan != null ? g.fan + "%" : g.fan_rpm ? g.fan_rpm + " rpm" : "–"],
         ["Encoders", g.encoders != null ? g.encoders : "–"],
       ];
-      return `<div class="gpu">
-        <div class="drive-top"><div class="drive-title"><b><span class="kind">${esc(g.vendor)}</span>${esc(g.name)}</b></div>
+      const hw = g.hw_transcode;
+      const hwNote = !hw ? "" : hw.ok
+        ? `<div class="hw-note good"><span class="dot"></span>Plex can use it for hardware transcoding${g.vendor === "Intel" ? " (Quick Sync)" : ""}</div>`
+        : `<div class="hw-note warn"><span class="dot"></span>Plex isn't in the <code>${esc(hw.group)}</code> group, so it can't hardware-transcode yet:
+           <code>usermod -aG ${esc(hw.group)} plex &amp;&amp; systemctl restart plexmediaserver</code></div>`;
+      const loadLabel = g.integrated && g.vendor === "Intel" ? "Load (busy time)" : "Core";
+      const clockPct = g.clock && g.clock_max ? (g.clock / g.clock_max) * 100 : null;
+      return `<div class="gpu${g.integrated ? " igpu" : ""}">
+        <div class="drive-top"><div class="drive-title"><b><span class="kind">${esc(g.vendor)}${g.integrated ? " · iGPU" : ""}</span>${esc(g.name)}</b></div>
           ${g.temp != null ? `<span class="badge ${tl}">${LVL_TEXT[tl]}</span>` : ""}</div>
-        ${barRow("Core", [{ v: g.util || 0, c: css("--s1") }], pct(g.util))}
+        ${g.util != null || !g.integrated ? barRow(loadLabel, [{ v: g.util || 0, c: css("--s1") }], pct(g.util)) : ""}
+        ${clockPct != null ? barRow("Clock", [{ v: clockPct, c: css("--s2") }], clockTxt) : ""}
         ${vr != null ? barRow("VRAM", [{ v: vr, c: css("--s3") }], `${bytes(g.vram_used)} / ${bytes(g.vram_total, 0)}`) : ""}
-        <div class="metrics">${metrics.map(([k, v]) => `<div class="metric"><small>${k}</small><b>${v}</b></div>`).join("")}</div>
+        <div class="metrics">${metrics.map(([k, v]) => `<div class="metric"><small>${k}</small><b>${esc(String(v))}</b></div>`).join("")}</div>
+        ${hwNote}
       </div>`;
     }).join("");
   }
@@ -689,6 +705,7 @@
       closePop();
       if (!same) {
         if (btn.dataset.drive != null) { pop.innerHTML = driveDetail(drivesCache[+btn.dataset.drive]); if (lastLive) renderDriveIO(lastLive.disk_io); }
+        if (btn.dataset.pop === "popSpecs") loadSpecs();
         pop.hidden = false; placePop(pop, btn.closest(".sb") || btn); btn.setAttribute("aria-expanded", "true"); openPop = { pop, btn };
       }
       return;
@@ -697,6 +714,59 @@
   });
   document.addEventListener("keydown", (e) => { if (e.key === "Escape") closePop(); });
   addEventListener("resize", () => openPop && placePop(openPop.pop, openPop.btn.closest(".sb") || openPop.btn));
+
+  /* ------------------------------------------------------------ server specs popover */
+  let specsText = "";
+  const gbit = (mbit) => (mbit == null ? null : mbit >= 1000 ? (mbit / 1000).toLocaleString() + " Gbit/s" : mbit + " Mbit/s");
+  const decSize = (n) => {   // drive and DIMM labels use the maker's decimal/marketing sizes
+    if (!n) return "";
+    const tb = n / 1e12, gb = n / 1e9;
+    return tb >= 1 ? (tb >= 10 ? Math.round(tb) : +tb.toFixed(1)) + " TB" : Math.round(gb) + " GB";
+  };
+  const ramSize = (n) => (n ? (n >= 2 ** 30 ? n / 2 ** 30 + " GB" : n / 2 ** 20 + " MB") : "");
+  function renderSpecs(d) {
+    const rows = [];   // [label, html value, plain-text value]
+    const add = (k, html, text) => { if (html) rows.push([k, html, text != null ? text : html.replace(/<[^>]+>/g, "")]); };
+    add("Hostname", esc(d.hostname) + (d.fqdn ? ` <small>${esc(d.fqdn)}</small>` : ""), d.hostname + (d.fqdn ? " (" + d.fqdn + ")" : ""));
+    add("Operating system", esc(d.os));
+    add("Kernel", esc([d.kernel, d.arch].filter(Boolean).join(" · ")));
+    if (d.uptime != null) add("Uptime", esc(dur(d.uptime)));
+    const cpuBits = [d.cpu_cores && `${d.cpu_cores} cores / ${d.cpu_threads} threads`, d.cpu_max_mhz && `up to ${(d.cpu_max_mhz / 1000).toFixed(2)} GHz`].filter(Boolean);
+    add("CPU", esc(d.cpu) + (cpuBits.length ? ` <small>${esc(cpuBits.join(" · "))}</small>` : ""), d.cpu);
+    const b = d.board || {};
+    if (b.motherboard) add("Motherboard", esc(b.motherboard) + (b.motherboard_version ? ` <small>Version ${esc(b.motherboard_version)}</small>` : ""),
+      b.motherboard + (b.motherboard_version ? ` (Version - ${b.motherboard_version})` : ""));
+    if (b.system) add("System", esc(b.system));
+    if (b.bios) add("BIOS", esc(b.bios) + (b.bios_detail ? ` <small>${esc(b.bios_detail)}</small>` : ""), b.bios);
+    const m = d.memory || {};
+    if (m.groups && m.groups.length) {
+      const lines = m.groups.map((g) => [g.vendor, g.part].filter(Boolean).join(" ") + ` ${ramSize(g.size)} × ${g.count}` +
+        ([g.type, g.speed].filter(Boolean).length ? ` · ${[g.type, g.speed].filter(Boolean).join(" ")}` : ""));
+      add("RAM", lines.map(esc).join("<br>") + ` <small>${bytes(m.total, 0)} usable</small>`, lines.join("; "));
+    } else if (m.total) add("RAM", `${bytes(m.total, 0)} <small>module details appear after the panel's hourly host scan</small>`, bytes(m.total, 0));
+    for (const st of d.storage || []) {
+      const raid = (st.raid || []).map((r) => `${(r.level || "").replace(/^raid/i, "RAID ")} (${r.name})`).join(", ");
+      const line = `${st.model} ${decSize(st.capacity)} ${st.kind === "ZFS" ? "" : st.kind}${st.count > 1 ? " × " + st.count : ""}${raid ? " · " + raid : ""}`.replace(/\s+/g, " ").trim();
+      add({ HDD: "HDD", ZFS: "ZFS", RAID: "RAID disk", NVMe: "NVMe SSD" }[st.kind] || "SSD", esc(line));
+    }
+    const nics = (d.network || []).filter((n) => n.kind === "Ethernet" || n.kind === "Wi-Fi");
+    for (const n of nics) add(n.kind === "Wi-Fi" ? "Wi-Fi" : "Ethernet card", esc(n.name) + ` <small>${esc([n.iface, gbit(n.speed), !n.up ? "down" : ""].filter(Boolean).join(" · "))}</small>`, n.name);
+    const def = nics.find((n) => n.default) || nics[0];
+    if (d.bandwidth_note || (def && def.speed)) add("Public bandwidth", esc(d.bandwidth_note || `${gbit(def.speed)} port`) +
+      (!d.bandwidth_note ? ` <small>set SERVER_BANDWIDTH in swizzin.cfg to describe your plan</small>` : ""), d.bandwidth_note || `${gbit(def.speed)} port`);
+    for (const g of d.graphics || []) add(g.integrated ? "iGPU" : "GPU", esc(g.name) + ` <small>${esc(g.state + (g.driver ? " · " + g.driver : ""))}</small>`, `${g.name} (${g.state})`);
+    $("specs").innerHTML = rows.map(([k, v]) => `<div class="spec"><span>${esc(k)}</span><b>${v}</b></div>`).join("");
+    specsText = rows.map(([k, , t]) => `${k} - ${t}`).join("\n");
+  }
+  async function loadSpecs() {
+    try { renderSpecs(await getJSON(S.api.specs)); }
+    catch (_) { if (!specsText) $("specs").innerHTML = `<div class="empty">Couldn't read the server's specifications.</div>`; }
+  }
+  if (S.admin && $("specsCopy")) $("specsCopy").addEventListener("click", async (e) => {
+    e.stopPropagation();
+    try { await navigator.clipboard.writeText(specsText); toast("Specifications copied"); }
+    catch (_) { toast("Copy needs https — select the text instead"); }
+  });
 
   /* ------------------------------------------------------------ fail2ban */
   function ago(sec) {
@@ -917,6 +987,94 @@
     $("procSearch").addEventListener("input", renderProcs);
   }
 
+  /* ============================================================ Plex: now playing */
+  let plexVisible = true, plexInstalled = null;
+  const kbps = (k) => (k == null ? "–" : k >= 1000 ? (k / 1000).toFixed(k >= 10000 ? 0 : 1) + " Mbps" : Math.round(k) + " kbps");
+  const mediaTime = (ms) => { if (ms == null) return "–"; const s = Math.floor(ms / 1000), h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), x = s % 60;
+    return (h ? h + ":" + String(m).padStart(2, "0") : m) + ":" + String(x).padStart(2, "0"); };
+  const PLEX_MSG = {
+    no_token: "Plex is installed, but the panel doesn't have its local token yet. The panel's host scan copies it hourly; run <code>systemctl start swizzin-host</code> to do it now, or set <code>PLEX_TOKEN</code> in swizzin.cfg.",
+    unreachable: "Plex isn't answering on this server right now (is <code>plexmediaserver</code> running?).",
+    unauthorized: "Plex refused the panel's token. It refreshes hourly; run <code>systemctl start swizzin-host</code> to refresh it now.",
+    error: "Plex returned an error. Try again in a moment.",
+  };
+  function renderPlex(d) {
+    const card = $("plexCard");
+    plexInstalled = !!d.installed; card.hidden = !d.installed;
+    if (!d.installed) return;
+    if (d.status !== "ok") {
+      $("plexNote").textContent = "Plex Media Server"; $("plexStats").innerHTML = "";
+      $("plexList").innerHTML = `<div class="empty">${PLEX_MSG[d.status] || PLEX_MSG.error}</div>`; return;
+    }
+    $("plexNote").textContent = d.count ? `${d.count} stream${d.count > 1 ? "s" : ""} · refreshes every 5 s` : "Nothing playing right now";
+    $("plexStats").innerHTML = [["Streams", d.count], ["Transcoding", d.transcodes + (d.hw_transcodes ? ` <small>(${d.hw_transcodes} HW)</small>` : "")], ["Bandwidth", kbps(d.bandwidth)]]
+      .map(([k, v]) => `<div class="metric"><small>${k}</small><b>${v}</b></div>`).join("");
+    $("plexList").innerHTML = d.sessions.length ? d.sessions.map((x) => {
+      const dec = x.decision === "transcode" ? "warn" : x.decision === "direct stream" ? "info" : "good";
+      const decText = x.decision === "transcode" ? `Transcode${x.hw ? " (HW)" : ""}` : x.decision === "direct stream" ? "Direct stream" : "Direct play";
+      const why = x.reasons && x.reasons.length ? x.reasons.join(" · ") : "";
+      const icon = x.type === "track" ? "♪" : x.type === "episode" ? "▤" : "▶";
+      return `<div class="np ${x.state}">
+        <div class="np-ico" aria-hidden="true">${icon}</div>
+        <div class="np-main">
+          <div class="np-title"><b title="${esc(x.title)}">${esc(x.title)}</b>${x.subtitle ? `<span>${esc(x.subtitle)}</span>` : ""}</div>
+          <div class="np-who"><span class="np-user">${esc(x.user)}</span> on ${esc(x.device || x.product || "a device")}${x.product && x.device && x.product !== x.device ? ` <small>${esc(x.product)}</small>` : ""}
+            <span class="np-loc ${x.location === "LAN" ? "lan" : "wan"}">${x.location}${x.relayed ? " · relay" : ""}</span>
+            ${x.state !== "playing" ? `<span class="np-state">${esc(x.state)}</span>` : ""}</div>
+          <div class="np-prog"><span class="bar"><i style="width:${x.progress || 0}%"></i></span><small>${mediaTime(x.offset)} / ${mediaTime(x.duration)}</small></div>
+        </div>
+        <div class="np-side">
+          <span class="np-dec ${dec}" title="${esc(why)}">${decText}</span>
+          <small>${esc([x.quality && (x.out_quality && x.out_quality !== x.quality ? `${x.quality} → ${x.out_quality}` : x.quality), kbps(x.bandwidth)].filter(Boolean).join(" · "))}</small>
+          ${why ? `<small class="np-why">${esc(why)}${x.throttled ? " · throttled" : x.speed ? ` · ${x.speed.toFixed(1)}×` : ""}</small>` : ""}
+        </div>
+      </div>`;
+    }).join("") : `<div class="empty">Nobody is watching right now.</div>`;
+  }
+  async function loadPlex() {
+    if (plexInstalled === false && !loadPlex.recheck) return;      // not installed: re-checked once a minute
+    if (plexInstalled && (!plexVisible || document.hidden)) return;
+    loadPlex.recheck = false;
+    renderPlex(await getJSON(S.api.plex));
+  }
+  if (S.admin) {
+    new IntersectionObserver((ents) => { plexVisible = ents.some((e) => e.isIntersecting); }).observe($("plexCard"));
+    setInterval(() => { loadPlex.recheck = true; }, 60000);
+  }
+
+  /* ============================================================ compact layout
+     Tighter spacing, and cards packed like masonry so a short card never leaves a hole beside a tall
+     one. Each card spans as many 4px grid rows as its height needs; a ResizeObserver keeps that in
+     step as content changes. Off by default. */
+  const grid = $("grid");
+  let packObs = null;
+  function packCard(el) {
+    if (el.hidden || getComputedStyle(el).display === "none") return;
+    el.style.gridRowEnd = "auto";
+    const h = el.getBoundingClientRect().height / zoom();
+    el.style.gridRowEnd = "span " + Math.max(1, Math.ceil((h + 12) / 4));    // + the 12 px gap below it
+  }
+  function setCompact(on) {
+    document.documentElement.classList.toggle("compact", on);
+    $("optCompact").checked = on;
+    const cards = [...grid.children].filter((c) => c.matches("section, .statusbar"));
+    if (on) {
+      if (!packObs && "ResizeObserver" in window) {
+        packObs = new ResizeObserver((ents) => requestAnimationFrame(() => ents.forEach((e) => packCard(e.target))));
+      }
+      cards.forEach((c) => { packCard(c); if (packObs) packObs.observe(c); });
+    } else {
+      if (packObs) { packObs.disconnect(); packObs = null; }
+      cards.forEach((c) => { c.style.gridRowEnd = ""; });
+    }
+    setTimeout(() => window.dispatchEvent(new Event("resize")), 50);   // charts re-measure
+  }
+  $("optCompact").addEventListener("change", (e) => { store.set("compact", e.target.checked ? "on" : "off"); setCompact(e.target.checked); });
+  // cards that appear later (GPU, Plex) or change size are packed by the observer; hidden ones take no rows
+  new MutationObserver(() => { if (document.documentElement.classList.contains("compact")) [...grid.children].forEach((c) => c.matches("section") && packCard(c)); })
+    .observe(grid, { subtree: false, childList: true, attributes: true, attributeFilter: ["hidden"] });
+  addEventListener("resize", () => { if (document.documentElement.classList.contains("compact")) [...grid.children].forEach((c) => c.matches("section, .statusbar") && packCard(c)); });
+
   /* ============================================================ apps */
   let statusMap = {};
   const apps = S.pages.slice().sort((a, b) => a.pretty_name.localeCompare(b.pretty_name));
@@ -1011,6 +1169,7 @@
     run(); return () => clearTimeout(t);
   }
   renderApps();
+  if (store.get("compact", "off") === "on") requestAnimationFrame(() => setCompact(true));
   every(10000, loadStatus);
   if (S.quota) every(60000, loadQuota);
   if (S.admin) {
@@ -1023,6 +1182,8 @@
     if (store.get("wxMode", "server") === "device") setTimeout(() => deviceWeather(false), 400);
     every(600000, () => store.get("wxMode", "server") === "device" ? deviceWeather(false) : null);
     every(60000, loadF2b);
+    loadPlex.recheck = true;
+    every(5000, loadPlex);
     setInterval(tickClock, 1000);
   }
 })();

@@ -26,7 +26,8 @@ auth = {"Authorization": "Basic " + base64.b64encode(b"smoke:smoke").decode()}
 bad = 0
 for path, needs_auth in [("/login", False), ("/", True), ("/classic", True), ("/api/system", True), ("/api/live", True),
                          ("/api/live", True), ("/api/storage", True), ("/api/traffic", True), ("/api/place", True),
-                         ("/api/fail2ban", True), ("/api/weather?lat=1&lon=2", True), ("/apps/status", True)]:
+                         ("/api/fail2ban", True), ("/api/weather?lat=1&lon=2", True), ("/apps/status", True),
+                         ("/api/specs", True), ("/api/plex", True), ("/api/procs", True)]:
     r = client.get(path, headers=auth if needs_auth else {})
     ok = r.status_code == 200
     print("{:4} {}".format(r.status_code, path))

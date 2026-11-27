@@ -54,6 +54,14 @@
     { e: 90, top: "#1463c4", mid: "#3896de", low: "#9ad3f2", g1: "#5ab3ff", g2: "#8ea2ff", g3: "#4ad2d0", g4: "#ffe6a8", stars: 0, tint: .46 },
   ];
   const MODES = { night: -40, day: 40 };
+  /* Light and Dark are calm, fixed themes (not skies): a soft neutral backdrop with faint pastel glows
+     for the frosted glass to refract. Pages that only style for skies pass init({ themes: false }) and
+     get the bright-day / night sky instead. */
+  const THEMES = {
+    day: { top: "#f6f8fb", mid: "#eff3f7", low: "#e7edf3", g1: "#b9e5cd", g2: "#cddbff", g3: "#bcebe4", g4: "#fde0bd", stars: 0, tint: 0 },
+    night: { top: "#121a23", mid: "#17212b", low: "#1b2632", g1: "#1c4152", g2: "#28325e", g3: "#15493f", g4: "#33294d", stars: 0, tint: 0 },
+  };
+  let useThemes = true;
   const modeNow = () => { const m = store.get("sky", "auto"); return m === "day" || m === "night" ? m : "auto"; };
   const hex = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
   const mix = (a, b, t) => { const A = hex(a), B = hex(b); return "#" + A.map((v, i) => Math.round(v + (B[i] - v) * t).toString(16).padStart(2, "0")).join(""); };
@@ -79,12 +87,16 @@
     let el, evening = false;
     if (mode === "auto") { el = sunElevation(now, loc.lat, loc.lon); evening = !rising(now, loc.lat, loc.lon); }
     else el = MODES[mode];
-    const p = palette(el, evening);
+    const themed = mode !== "auto" && useThemes;
+    const p = themed ? THEMES[mode] : palette(el, evening);
     const s = root.style;
     s.setProperty("--sky-top", p.top); s.setProperty("--sky-mid", p.mid); s.setProperty("--sky-low", p.low);
     s.setProperty("--glow-1", p.g1); s.setProperty("--glow-2", p.g2); s.setProperty("--glow-3", p.g3); s.setProperty("--glow-4", p.g4);
     s.setProperty("--glass-tint", p.tint.toFixed(3)); s.setProperty("--stars", p.stars.toFixed(3));
-    root.dataset.skyphase = el < -6 ? "night" : el < 8 ? "twilight" : "day";
+    root.dataset.theme = themed ? (mode === "day" ? "light" : "dark") : "sky";
+    root.dataset.skyphase = themed ? (mode === "day" ? "light" : "night") : el < -6 ? "night" : el < 8 ? "twilight" : "day";
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.content = p.top;
     current = { elevation: el, phase: mode === "auto" ? phaseName(el, evening) : mode === "day" ? "Light" : "Dark", stars: p.stars, source: loc.source, mode };
     document.dispatchEvent(new CustomEvent("swz-sky", { detail: current }));
     if (wake) wake();
@@ -188,6 +200,7 @@
     sunElevation,
     init(opts) {
       if (started) return; started = true;
+      if (opts && opts.themes === false) useThemes = false;
       if (opts && opts.canvas) constellation(opts.canvas, opts);
       apply();
       // re-evaluate every minute, aligned to the start of the minute

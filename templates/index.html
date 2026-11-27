@@ -5,6 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="color-scheme" content="dark">
   <meta name="theme-color" content="#07080d">
+  <script>/* pick the theme before first paint so Light never flashes dark */
+    try { var m = localStorage.getItem("swz.sky"), c = localStorage.getItem("swz.compact");
+      document.documentElement.dataset.theme = m === "day" ? "light" : m === "night" ? "dark" : "sky";
+      if (c === "on") document.documentElement.classList.add("compact"); } catch (e) {}</script>
   <title>{{ title }}</title>
   <link rel="shortcut icon" href="{{ url_for('static', filename='img/favicon/favicon.ico') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/glass.css') }}">
@@ -28,7 +32,7 @@
 
   <aside class="side glass" id="side" aria-label="Applications">
     <div class="side-head">
-      <img src="{{ url_for('static', filename='img/favicon/favicon-32x32.png') }}" alt="" class="side-logo" onerror="this.style.visibility='hidden'">
+      <span class="glass-logo" aria-hidden="true"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 6000 6000" aria-hidden="true"><g transform="translate(0,6000) scale(1,-1)"><path d="M5509 5385 c59 -32 112 -90 137 -151 25 -59 21 -173 -8 -254 -19 -50 -2301 -3974 -2452 -4215 -44 -71 -103 -133 -151 -158 -59 -32 -201 -31 -267 1 -99 49 -166 142 -175 241 -7 81 21 158 115 313 44 73 591 1011 1217 2083 625 1073 1152 1974 1171 2003 46 71 107 130 157 153 64 30 184 23 256 -16z M1395 2485 c40 -21 72 -47 97 -80 66 -86 69 -111 66 -482 l-3 -328 -27 -51 c-36 -68 -115 -138 -172 -153 -29 -7 -173 -11 -414 -11 -421 0 -432 2 -506 76 -90 90 -105 156 -105 489 -1 225 10 348 35 397 47 94 121 152 213 168 25 5 206 8 402 7 l355 -2 59 -30z" fill="currentColor"/></g></svg></span>
       <span class="side-label side-title">swizzin</span>
     </div>
     <nav class="side-list" id="sideList">
@@ -45,26 +49,34 @@
   <div class="shell">
   <header class="topbar glass liquid">
     <button class="icon-btn hamburger" id="sideOpen" aria-label="Open apps menu"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
+    {% if admin %}
+    <button class="brand brand-btn" data-pop="popSpecs" aria-haspopup="dialog" aria-expanded="false" title="Server specifications">
+      <span class="host"><span id="host">swizzin</span><span class="host-os" id="hostOs"></span></span>
+      <span class="sub"><span id="sysline">{{ user }}</span><span class="specs-hint">Specs <span class="caret">▾</span></span></span>
+    </button>
+    {% else %}
     <div class="brand">
       <div>
         <div class="host" id="host">swizzin</div>
         <div class="sub" id="sysline">{{ user }}</div>
       </div>
     </div>
+    {% endif %}
     <div class="chips" id="chips"></div>
     <nav class="menu">
       <button class="pill" id="menuBtn" aria-haspopup="true" aria-expanded="false">{{ user }} <span class="caret">▾</span></button>
       <div class="dropdown glass" id="menu" hidden>
         <div class="menu-sky">
           <div class="menu-sky-head"><span>Sky</span><span class="muted" id="skyPhase"></span></div>
-          <div class="seg sky-seg" role="radiogroup" aria-label="Sky theme">
-            <button role="radio" data-skymode="auto" title="Follows the real sun at this location">Auto</button>
-            <button role="radio" data-skymode="day" title="Always the bright daytime sky">Light</button>
-            <button role="radio" data-skymode="night" title="Always the night sky with stars">Dark</button>
+          <div class="seg sky-seg" role="radiogroup" aria-label="Theme">
+            <button role="radio" data-skymode="auto" title="A live sky that follows the real sun at this location">Auto</button>
+            <button role="radio" data-skymode="day" title="Clean light theme with frosted glass">Light</button>
+            <button role="radio" data-skymode="night" title="Slate dark theme with frosted glass">Dark</button>
           </div>
           <div class="muted menu-sky-src" id="skySrc"></div>
         </div>
         <hr>
+        <label class="row-toggle"><span>Compact layout</span><input type="checkbox" id="optCompact"><i></i></label>
         <label class="row-toggle"><span>Liquid refraction</span><input type="checkbox" id="optRefraction" checked><i></i></label>
         <label class="row-toggle"><span>Ambient motion</span><input type="checkbox" id="optMotion" checked><i></i></label>
         <hr>
@@ -99,6 +111,11 @@
     </section>
 
     <div class="pop pop-wide glass" id="popDrive" role="dialog" aria-label="Drive health" hidden></div>
+    <div class="pop pop-wide pop-specs glass" id="popSpecs" role="dialog" aria-label="Server specifications" hidden>
+      <div class="pop-head"><span class="label">Server specifications</span>
+        <button class="pill pop-mini" id="specsCopy" title="Copy all specifications as text">Copy</button></div>
+      <div class="specs" id="specs"><div class="empty">Loading…</div></div>
+    </div>
     <div class="pop glass" id="popClock" role="dialog" aria-label="Server time" hidden>
       <div class="pop-head"><span class="label">Server time</span><span class="muted" id="tzName"></span></div>
       <div class="pop-big" id="clockDate">–</div>
@@ -179,6 +196,14 @@
     </section>
 
     <!-- Data transferred (vnstat) -->
+    <section class="glass card" data-span="12" id="plexCard" hidden>
+      <div class="card-head">
+        <div><h2>Now playing <span class="muted plex-tag">Plex</span></h2><p class="muted" id="plexNote">–</p></div>
+        <div class="plex-stats" id="plexStats"></div>
+      </div>
+      <div id="plexList"></div>
+    </section>
+
     <section class="glass card" data-span="12" id="trafficCard">
       <div class="card-head">
         <div><h2>Data transferred</h2><p class="muted" id="trafficNote">Loading vnstat history…</p></div>
@@ -211,7 +236,7 @@
 
     <!-- GPU -->
     <section class="glass card" data-span="12" id="gpuCard" hidden>
-      <div class="card-head"><div><h2>Graphics</h2><p class="muted" id="gpuNote">–</p></div></div>
+      <div class="card-head"><div><h2 id="gpuTitle">Graphics</h2><p class="muted" id="gpuNote">–</p></div></div>
       <div id="gpus"></div>
     </section>
 
@@ -292,6 +317,8 @@
         weather: {{ url_for('api_weather')|tojson }},
         fail2ban: {{ url_for('api_fail2ban')|tojson }},
         procs: {{ url_for('api_procs')|tojson }},
+        specs: {{ url_for('api_specs')|tojson }},
+        plex: {{ url_for('api_plex')|tojson }},
         status: {{ url_for('app_status')|tojson }},
         service: {{ url_for('service')|tojson }},
         quota: {{ url_for('quota_free')|tojson }}

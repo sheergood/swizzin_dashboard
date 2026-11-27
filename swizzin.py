@@ -64,6 +64,8 @@ if app.config['RATELIMIT_ENABLED'] == True:
 from core.util import *
 import core.hardware as hw
 import core.place as place
+import core.specs as specs
+import core.plex as plex
 
 #Prepare the background threads
 thread = None
@@ -274,6 +276,18 @@ def api_procs(user):
 @_api
 def api_traffic(user):
     return hw.traffic()
+
+@app.route('/api/specs')
+@htpasswd.required
+@_api
+def api_specs(user):
+    return specs.specs(app.config)
+
+@app.route('/api/plex')
+@htpasswd.required
+@_api
+def api_plex(user):
+    return plex.now_playing(app.config)
 
 @socketio.on('connect', namespace='/websocket')
 def socket_connect():

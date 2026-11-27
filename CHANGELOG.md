@@ -3,6 +3,40 @@
 Fork of [liaralabs/swizzin_dashboard](https://github.com/liaralabs/swizzin_dashboard), tuned for
 seedbox servers. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [sheergood-3] — Nov 27 2026
+
+### Added
+- **Themes: Auto · Light · Dark.** Auto is the living sky that follows the sun. Light and Dark are
+  calm, fixed themes in the style of a clean admin console (white or slate surfaces, green accent),
+  still built from frosted, refracting glass. The choice is applied before first paint (no flash)
+  and the login page follows it.
+- **Server specs popover.** The header now reads *hostname — OS*; click it for hostname, OS, kernel,
+  uptime, CPU, motherboard (with version), BIOS, RAM modules (vendor, part number, size × count,
+  type and speed), drives grouped by model with their RAID arrays, Ethernet cards, public bandwidth
+  and GPU/iGPU. **Copy** puts the whole list on the clipboard as text. Set `SERVER_BANDWIDTH` in
+  swizzin.cfg (e.g. `"1Gbit/s unmetered and guaranteed"`) to describe your plan; RAM module details
+  come from the root `swizzin-host` timer (sheergood/swizzin) and appear within an hour of `box update`.
+- **Integrated graphics.** The Graphics card now recognises Intel and AMD iGPUs and only appears
+  when one (or a graphics card) is enabled with a kernel driver. For Intel it shows load (from the
+  GPU's idle residency, no root or intel_gpu_top needed), current/max clock, render node, PCI slot
+  and driver; if Plex is installed it says whether Plex can use the iGPU for hardware transcoding and
+  gives the one command to fix it if not.
+- **Plex "Now playing"** card, shown only when Plex is installed: who is watching what, on which
+  device, LAN or remote, progress, quality and bandwidth, and Direct play / Direct stream /
+  Transcode (HW) with the reason (e.g. `video hevc → h264`, subtitles burned in). Polls the local
+  Plex server every 5 s while visible; the token stays on the server. `PLEX_URL` and `PLEX_TOKEN` in
+  swizzin.cfg override the defaults.
+- **Compact layout** (menu → Compact layout): tighter spacing and masonry packing, so short cards
+  fill the gaps beside tall ones instead of leaving blank space.
+- The swizzin mark in the sidebar sits on a small drop of liquid glass tinted by the sky or theme.
+- FileBrowser Quantum (`box install fbquantum`) appears in the apps list with its icon.
+
+### Verified
+- 32 unit tests (new: iGPU detection on fake sysfs for Intel i915/xe and AMD APU vs discrete, load
+  maths and counter clamping, Plex session parsing and every error state, DMI junk filtering, RAM
+  vendor codes, drive/RAID grouping); smoke test covers `/api/specs`, `/api/plex`, `/api/procs`.
+- Layout re-checked on 30 screens (360 px phone to native 8K) in Auto, Light + Compact and Dark.
+
 ## [sheergood-2] — Nov 27 2026
 
 ### Added

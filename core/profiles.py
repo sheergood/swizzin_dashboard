@@ -73,6 +73,11 @@ class emby_meta:
     runas = "emby"
     systemd = "emby-server"
 
+class fbquantum_meta:
+    name = "fbquantum"
+    pretty_name = "FileBrowser Quantum"
+    baseurl = "/fbquantum"
+
 class filebrowser_meta:
     name = "filebrowser"
     pretty_name = "Filebrowser"

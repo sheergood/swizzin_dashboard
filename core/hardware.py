@@ -29,6 +29,10 @@ SMART_DIR = "/var/lib/swizzin/smart"
 _lock = threading.Lock()
 _prev = {"t": None, "cpu": None, "net": None, "disk": None}
 _gpu_cache = {"t": 0, "data": []}
+DRM = os.environ.get("SWZ_TEST_DRM", "/sys/class/drm")       # overrides only for tests
+GROUP_FILE = os.environ.get("SWZ_TEST_GROUP", "/etc/group")
+INSTALL_DIR = os.environ.get("SWZ_TEST_INSTALL", "/install")
+_idle_prev = {}   # card -> (time, idle ms) for the iGPU load estimate
 _static_cache = {}
 
 
@@ -199,19 +203,21 @@ def _gpus():
                              "clock": num(9), "encoders": num(10)})
         except Exception:
             pass
-    for card in sorted(glob.glob("/sys/class/drm/card[0-9]")):
+    for card in sorted(glob.glob(DRM + "/card[0-9]")):
         dev = card + "/device"
         vendor = _read(dev + "/vendor", "")
         if vendor == "0x10de" and gpus:
             continue  # already covered by nvidia-smi
         if vendor not in ("0x1002", "0x8086", "0x10de"):
             continue
+        slot = os.path.basename(os.path.realpath(dev))
         g = {"vendor": {"0x1002": "AMD", "0x8086": "Intel", "0x10de": "NVIDIA"}[vendor],
-             "name": _read(dev + "/product_name") or _lspci_name(dev) or "GPU",
+             "name": _read(dev + "/product_name") or _lspci_name(dev) or None,
              "util": _read_int(dev + "/gpu_busy_percent"),
              "vram_used": _read_int(dev + "/mem_info_vram_used"),
              "vram_total": _read_int(dev + "/mem_info_vram_total"),
-             "temp": None, "power": None, "fan": None, "clock": None}
+             "temp": None, "power": None, "fan": None, "clock": None, "slot": slot,
+             "driver": os.path.basename(os.path.realpath(dev + "/driver")) if os.path.exists(dev + "/driver") else None}
         for hw in glob.glob(dev + "/hwmon/hwmon*"):
             t = _read_int(hw + "/temp1_input")
             if t:
@@ -229,9 +235,97 @@ def _gpus():
                     g["clock"] = float(line.split()[1].lower().replace("mhz", ""))
                 except Exception:
                     pass
+        # Integrated graphics: Intel's iGPU always sits at PCI 00:02.0; an AMD APU reports a small
+        # carve-out (<= 2 GiB) as "VRAM" where discrete cards have their own memory.
+        g["integrated"] = (vendor == "0x8086" and slot.endswith(":00:02.0")) or \
+            (vendor == "0x1002" and g["vram_total"] is not None and g["vram_total"] <= 2 * 2 ** 30)
+        if vendor == "0x8086":
+            _intel_metrics(card, g, now)
+        if not g["name"]:
+            try:
+                from core import specs as _specs      # pci.ids lookup when lspci isn't installed
+                g["name"] = _specs.pci_name(dev)
+            except Exception:
+                pass
+        if g["integrated"] and not g["name"]:
+            pid = (_read(dev + "/device") or "").replace("0x", "")
+            g["name"] = "{} integrated graphics{}".format(g["vendor"], " ({}:{})".format(vendor[2:], pid) if pid else "")
+        g["name"] = g["name"] or "GPU"
+        render = _render_node(card)
+        if render:
+            g["render_node"] = render
+            g["hw_transcode"] = _plex_can_use(render)
         gpus.append(g)
     _gpu_cache.update(t=now, data=gpus)
     return gpus
+
+
+def _first_int(paths):
+    for p in paths:
+        v = _read_int(p)
+        if v is not None:
+            return v, p
+    return None, None
+
+
+def _intel_metrics(card, g, now):
+    """Load and clock for Intel graphics from sysfs (no root, no intel_gpu_top).
+
+    Load comes from the GPU's idle (RC6) residency: the share of wall time the GPU was NOT asleep
+    since the last reading. Media engines (Quick Sync) count, since they keep the GT awake; on
+    chips with a separate media GT (Meteor Lake+) the busier GT is shown."""
+    dev = card + "/device"
+    gts = sorted(glob.glob(card + "/gt/gt[0-9]")) or [None]
+    best = None
+    for gt in gts:
+        cands = ([gt + "/rc6_residency_ms"] if gt else []) + [card + "/power/rc6_residency_ms"]
+        xe = sorted(glob.glob(dev + "/tile0/gt[0-9]/gtidle/idle_residency_ms"))
+        idle, path = _first_int(cands + xe)
+        if idle is None:
+            continue
+        prev = _idle_prev.get(path)
+        _idle_prev[path] = (now, idle)
+        if prev and now > prev[0]:
+            busy = 100.0 * (1 - (idle - prev[1]) / ((now - prev[0]) * 1000.0))
+            busy = max(0.0, min(100.0, busy))
+            best = busy if best is None else max(best, busy)
+    if g["util"] is None:
+        g["util"] = None if best is None else round(best, 1)
+    gt0 = gts[0]
+    act, _ = _first_int(([gt0 + "/rps_act_freq_mhz"] if gt0 else []) +
+                        [card + "/gt_act_freq_mhz", card + "/gt_cur_freq_mhz"] +
+                        sorted(glob.glob(dev + "/tile0/gt0/freq0/act_freq")))
+    mx, _ = _first_int(([gt0 + "/rps_RP0_freq_mhz"] if gt0 else []) +
+                       [card + "/gt_RP0_freq_mhz", card + "/gt_max_freq_mhz"] +
+                       sorted(glob.glob(dev + "/tile0/gt0/freq0/rp0_freq")) +
+                       sorted(glob.glob(dev + "/tile0/gt0/freq0/max_freq")))
+    if act is not None:
+        g["clock"] = act
+    if mx:
+        g["clock_max"] = mx
+
+
+def _render_node(card):
+    nodes = sorted(glob.glob(card + "/device/drm/renderD*"))
+    return "/dev/dri/" + os.path.basename(nodes[0]) if nodes else None
+
+
+def _plex_can_use(render):
+    """Can Plex hardware-transcode on this GPU? Plex has to be a member of the group that owns
+    the render node (usually "render", sometimes "video"). None when Plex isn't installed."""
+    if not os.path.exists(INSTALL_DIR + "/.plex.lock"):
+        return None
+    try:
+        import grp
+        group = grp.getgrgid(os.stat(render).st_gid).gr_name
+    except Exception:
+        group = "render"
+    members = set()
+    for line in (_read(GROUP_FILE, "") or "").splitlines():
+        f = line.split(":")
+        if len(f) >= 4 and f[0] == group:
+            members = set(filter(None, f[3].split(",")))
+    return {"group": group, "ok": "plex" in members}
 
 
 def _lspci_name(dev):

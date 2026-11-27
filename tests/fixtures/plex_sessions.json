@@ -1,0 +1,20 @@
+{"MediaContainer":{"size":3,"Metadata":[
+ {"type":"episode","title":"The Long Night","grandparentTitle":"Northern Lights","parentIndex":2,"index":7,"duration":3420000,"viewOffset":1310000,
+  "librarySectionTitle":"TV Shows","User":{"id":"1","title":"prateek"},
+  "Player":{"title":"Living Room TV","product":"Plex for LG","platform":"webOS","state":"playing","local":true,"relayed":false},
+  "Session":{"id":"a","bandwidth":12450,"location":"lan"},
+  "Media":[{"videoResolution":"1080","bitrate":11800,"Part":[{"decision":"directplay","Stream":[]}]}]},
+ {"type":"movie","title":"Harbor Bridge","year":2024,"duration":7380000,"viewOffset":5900000,
+  "User":{"id":"2","title":"ishita"},
+  "Player":{"title":"iPhone","product":"Plex for iOS","platform":"iOS","state":"playing","local":false,"relayed":false},
+  "Session":{"id":"b","bandwidth":8200,"location":"wan"},
+  "Media":[{"videoResolution":"4k","bitrate":42000,"Part":[{"decision":"transcode","Stream":[{"streamType":3,"decision":"burn"}]}]}],
+  "TranscodeSession":{"throttled":false,"speed":2.4,"videoDecision":"transcode","audioDecision":"copy","sourceVideoCodec":"hevc","videoCodec":"h264","height":1080,
+   "transcodeHwRequested":true,"transcodeHwDecoding":"vaapi","transcodeHwEncoding":"vaapi","transcodeHwFullPipeline":true}},
+ {"type":"track","title":"Blue Hour","grandparentTitle":"Lumen","parentTitle":"Night Drive","duration":245000,"viewOffset":61000,
+  "User":{"id":"1","title":"prateek"},
+  "Player":{"title":"Chrome","product":"Plex Web","platform":"Chrome","state":"paused","local":false},
+  "Session":{"id":"c","bandwidth":320,"location":"wan"},
+  "Media":[{"bitrate":320,"Part":[{"decision":"directplay"}]}],
+  "TranscodeSession":{"videoDecision":null,"audioDecision":"copy","throttled":true}}
+]}}
