@@ -145,9 +145,11 @@ jobs:
               title="Upstream sync job failed"
               what="The weekly sync job itself failed ([log]($RUN_URL)). Changes:" ;;
           esac
+          nochange="**Nothing was changed:** \`master\` and \`custom\` are untouched, so servers running \`box update\` keep the current, tested version."
+          [ "$PROMOTE" = failure ] && nochange="**Nothing was forced:** a branch that had moved was left as it is ([which one is in the log]($RUN_URL)); servers only ever get commits that passed CI."
           body=$(printf '%s\n' \
             "$what" "" "${FILES:-}" "" \
-            "**Nothing was changed:** \`master\` and \`custom\` are untouched, so servers running \`box update\` keep the current, tested version." "" \
+            "$nochange" "" \
             "<details><summary>New upstream commits (${COUNT:-?})</summary>" "" "${COMMITS:-}" "" "</details>" "" \
             "**To merge by hand:**" '```bash' \
             "git clone https://github.com/$GH_REPO && cd ${GH_REPO#*/}" \
@@ -156,6 +158,10 @@ jobs:
             "git push origin HEAD:master HEAD:custom" '```' "" \
             "This issue closes itself once a later run merges the update successfully. [Run log]($RUN_URL)")
           summary "### ⚠️ $title" "" "$body"
+          if [ "$(gh api "repos/$GH_REPO" -q .has_issues)" != true ]; then
+            echo "::error::$title. Details are in this run's summary. Turn on Issues (Settings → General → Features) to get these reports as issues."
+            exit 1
+          fi
           gh label create upstream-sync --color FBCA04 --description "Weekly upstream sync" --force >/dev/null
           open=$(gh issue list --label upstream-sync --state open --json number -q '.[0].number')
           if [ -n "$open" ]; then
