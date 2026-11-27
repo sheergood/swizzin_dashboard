@@ -39,7 +39,7 @@ except ImportError:  # pragma: no cover
 LOCATE = os.environ.get("NDT7_LOCATE", "https://locate.measurementlab.net/v2/nearest/ndt/ndt7?client_name=swizzin-panel")
 UA = "swizzin-panel-ndt7/1.0 (+https://github.com/sheergood/swizzin_dashboard)"
 PROTO = "net.measurementlab.ndt.v7"
-GUID = b"258EAFA5-E914-47DA-95CA-C5AB0DC11B85"
+GUID = b"258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 DURATION = float(os.environ.get("NDT7_DURATION", "10"))   # seconds per direction (10 = protocol maximum; tests use less)
 HARD_LIMIT = 15.0        # give up on a direction after this long no matter what
 MAX_MSG = 1 << 24
@@ -49,6 +49,11 @@ INSECURE = os.environ.get("NDT7_INSECURE") == "1"   # tests only (self-signed lo
 def emit(**kw):
     sys.stdout.write(json.dumps(kw) + "\n")
     sys.stdout.flush()
+
+
+def accept_for(key):
+    """Sec-WebSocket-Accept the server must send for our Sec-WebSocket-Key (RFC 6455 section 4.2.2)."""
+    return base64.b64encode(hashlib.sha1(key + GUID).digest()).decode()
 
 
 class WS(object):
@@ -87,9 +92,8 @@ class WS(object):
         if " 101 " not in lines[0] + " ":
             raise IOError("server refused the test: " + lines[0])
         hdr = {k.strip().lower(): v.strip() for k, _, v in (l.partition(":") for l in lines[1:])}
-        want = base64.b64encode(hashlib.sha1(key + GUID).digest()).decode()
-        if hdr.get("sec-websocket-accept") != want:
-            raise IOError("bad WebSocket handshake")
+        if hdr.get("sec-websocket-accept") != accept_for(key):
+            raise IOError("bad WebSocket handshake (server answered {!r})".format(lines[0][:80]))
         if hdr.get("sec-websocket-protocol", PROTO) != PROTO:
             raise IOError("server did not accept the ndt7 protocol")
         self.sock.settimeout(timeout)

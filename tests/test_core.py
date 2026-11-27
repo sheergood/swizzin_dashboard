@@ -478,6 +478,12 @@ class SpeedTest(unittest.TestCase):
         self.assertEqual(final["server"]["city"], "Amsterdam")
         self.assertEqual([l["phase"] for l in lines if "phase" in l][0], "locate")
 
+    def test_handshake_matches_rfc6455(self):
+        # the worked example in RFC 6455 section 1.3; checked independently of our fake server
+        sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "core"))
+        import ndt7
+        self.assertEqual(ndt7.accept_for(b"dGhlIHNhbXBsZSBub25jZQ=="), "s3pPLMBiTxaQ9kYGzzhZRbK+xOo=")
+
     def test_unreachable_is_a_message(self):
         code, lines = self.run_client(NDT7_LOCATE="http://127.0.0.1:9/v2/nearest/ndt/ndt7")
         self.assertEqual(code, 1)

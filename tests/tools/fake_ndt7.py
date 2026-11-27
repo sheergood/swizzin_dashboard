@@ -13,7 +13,7 @@ TLS = len(sys.argv) > 3
 MBPS = float(os.environ.get("FAKE_NDT7_MBPS", "200"))
 SECS = float(os.environ.get("FAKE_NDT7_SECONDS", "2"))
 MODE = os.environ.get("FAKE_NDT7_MODE", "")
-GUID = b"258EAFA5-E914-47DA-95CA-C5AB0DC11B85"
+GUID = b"258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 
 
 def frame(op, payload):

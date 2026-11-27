@@ -3,6 +3,15 @@
 Fork of [liaralabs/swizzin_dashboard](https://github.com/liaralabs/swizzin_dashboard), tuned for
 seedbox servers. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [sheergood-8] — Nov 27 2026
+
+### Fixed
+- Speed test failed on real M-Lab servers with "bad WebSocket handshake": a typo in the fixed
+  WebSocket GUID (RFC 6455) made every handshake check fail. The test server used in the tests had
+  the same typo, so the tests passed anyway. Now checked against the RFC's own worked example and
+  against an independent WebSocket server library, for both download and upload. The error now
+  includes the server's status line to make any future failure easier to diagnose.
+
 ## [sheergood-7] — Nov 27 2026
 
 ### Added
