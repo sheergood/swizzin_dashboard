@@ -193,11 +193,11 @@
     const paintSkyMenu = (st) => {
       $("skyPhase").textContent = st.phase + (st.mode === "auto" ? ` · sun ${st.elevation >= 0 ? "+" : ""}${Math.round(st.elevation)}°` : "");
       $("skySrc").textContent = st.mode === "auto" ? `Auto follows the sun at ${SRC[st.source] || st.source}; updates every minute.` : "Fixed sky. Choose Auto to follow the real sun.";
-      document.querySelectorAll("[data-sky]").forEach((b) => { const on = b.dataset.sky === st.mode; b.setAttribute("aria-selected", String(on)); b.setAttribute("aria-checked", String(on)); });
+      document.querySelectorAll(".sky-seg [data-skymode]").forEach((b) => { const on = b.dataset.skymode === st.mode; b.setAttribute("aria-selected", String(on)); b.setAttribute("aria-checked", String(on)); });
     };
     document.addEventListener("swz-sky", (e) => paintSkyMenu(e.detail));
     paintSkyMenu(SKY.state());
-    document.querySelectorAll("[data-sky]").forEach((b) => b.addEventListener("click", () => SKY.setMode(b.dataset.sky)));
+    document.querySelectorAll(".sky-seg [data-skymode]").forEach((b) => b.addEventListener("click", () => SKY.setMode(b.dataset.skymode)));
   }
 
   const menu = $("menu"), menuBtn = $("menuBtn");

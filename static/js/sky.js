@@ -8,7 +8,7 @@
  *
  * window.SWZ_SKY.init({ canvas, fps, interactive })   start (once per page)
  * window.SWZ_SKY.setLocation(lat, lon, source)         'device' | 'server'  (remembered per browser)
- * window.SWZ_SKY.setMode('auto' | 'day' | 'night' | 'dawn' | 'dusk')
+ * window.SWZ_SKY.setMode('auto' | 'day' | 'night')
  * window.SWZ_SKY.state()                               { elevation, phase, source, mode }
  */
 (function () {
@@ -53,7 +53,8 @@
     { e: 30, top: "#1660bd", mid: "#348ed6", low: "#92cbee", g1: "#58adff", g2: "#8a9cff", g3: "#48cccc", g4: "#ffe09c", stars: 0, tint: .44 },
     { e: 90, top: "#1463c4", mid: "#3896de", low: "#9ad3f2", g1: "#5ab3ff", g2: "#8ea2ff", g3: "#4ad2d0", g4: "#ffe6a8", stars: 0, tint: .46 },
   ];
-  const MODES = { night: -40, dawn: -3, golden: 3, day: 40, dusk: -3 };
+  const MODES = { night: -40, day: 40 };
+  const modeNow = () => { const m = store.get("sky", "auto"); return m === "day" || m === "night" ? m : "auto"; };
   const hex = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
   const mix = (a, b, t) => { const A = hex(a), B = hex(b); return "#" + A.map((v, i) => Math.round(v + (B[i] - v) * t).toString(16).padStart(2, "0")).join(""); };
   function palette(el, evening) {
@@ -74,16 +75,16 @@
   /* ---------------------------------------------------------------- apply */
   let current = { elevation: 0, phase: "", stars: 1, source: "timezone", mode: "auto" };
   function apply() {
-    const mode = store.get("sky", "auto"), loc = location(), now = new Date();
+    const mode = modeNow(), loc = location(), now = new Date();
     let el, evening = false;
     if (mode === "auto") { el = sunElevation(now, loc.lat, loc.lon); evening = !rising(now, loc.lat, loc.lon); }
-    else { el = MODES[mode] != null ? MODES[mode] : -40; evening = mode === "dusk"; }
+    else el = MODES[mode];
     const p = palette(el, evening);
     const s = root.style;
     s.setProperty("--sky-top", p.top); s.setProperty("--sky-mid", p.mid); s.setProperty("--sky-low", p.low);
     s.setProperty("--glow-1", p.g1); s.setProperty("--glow-2", p.g2); s.setProperty("--glow-3", p.g3); s.setProperty("--glow-4", p.g4);
     s.setProperty("--glass-tint", p.tint.toFixed(3)); s.setProperty("--stars", p.stars.toFixed(3));
-    root.dataset.sky = el < -6 ? "night" : el < 8 ? "twilight" : "day";
+    root.dataset.skyphase = el < -6 ? "night" : el < 8 ? "twilight" : "day";
     current = { elevation: el, phase: mode === "auto" ? phaseName(el, evening) : mode[0].toUpperCase() + mode.slice(1), stars: p.stars, source: loc.source, mode };
     document.dispatchEvent(new CustomEvent("swz-sky", { detail: current }));
     if (wake) wake();
@@ -197,8 +198,8 @@
       store.set("loc.lat", (+lat).toFixed(3)); store.set("loc.lon", (+lon).toFixed(3)); store.set("loc.src", source || "server");
       if (started) apply();
     },
-    setMode(m) { store.set("sky", m); if (started) apply(); },
-    mode: () => store.get("sky", "auto"),
+    setMode(m) { store.set("sky", m === "day" || m === "night" ? m : "auto"); if (started) apply(); },
+    mode: modeNow,
     state: () => current,
   };
 })();

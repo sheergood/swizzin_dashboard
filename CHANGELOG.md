@@ -37,7 +37,7 @@ seedbox servers. Format follows [Keep a Changelog](https://keepachangelog.com/en
   📍 is on), re-evaluated every minute — night → dawn → golden hour → day → golden hour → dusk —
   with warmer sunsets than sunrises and smooth 6 s colour glides. At night a constellation fades in
   behind the glass; by day it fades out and stops drawing. Glass darkens and secondary text lightens
-  as the sky brightens so everything stays readable. User menu → **Sky**: Auto, Dawn, Day, Dusk, Night.
+  as the sky brightens so everything stays readable. User menu → **Sky**: Auto, Day, Night.
   The login page reuses the last location seen by the dashboard (or a time-zone estimate).
 - **Live disk I/O, btop-style** — every drive row shows an IO% meter (busy time) and live read and
   write rates with one-minute bar graphs, plus total read/write in the card header. Columns adapt to
@@ -144,6 +144,10 @@ seedbox servers. Format follows [Keep a Changelog](https://keepachangelog.com/en
 - `/` now renders the glass dashboard; the old template moved to `templates/classic.html`.
 
 ### Fixed
+- Sky menu: **Auto** could not be selected — the page root carried the same `data-sky` attribute the
+  buttons used, so every click also re-applied the current phase. The root now uses
+  `data-skyphase`, the buttons are scoped to the menu, and only Auto / Day / Night remain (a saved
+  Dawn or Dusk falls back to Auto).
 - App icons could stay blank: the grid was rebuilt every 10 s (lazy images were replaced before
   loading) and relied on inline `onerror`. Cards are now built once and updated in place, and
   every icon has the app's initial underneath that shows if the image doesn't load.
