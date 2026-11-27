@@ -3,6 +3,29 @@
 Fork of [liaralabs/swizzin_dashboard](https://github.com/liaralabs/swizzin_dashboard), tuned for
 seedbox servers. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [sheergood-12] — Nov 28 2026
+
+### Added
+- **Torrent racing** card (qBittorrent and autobrr), read-only:
+  - Live upload / download, all-time ratio, this session's totals, what's still to download against
+    free disk space, and errored / stalled torrents.
+  - Top uploaders right now, new torrents of the last 24 hours with their **upload in the first 10
+    minutes** (only shown when the panel watched the torrent from under 10 minutes old, so the
+    number is never a guess), and upload per tracker today and over 7 days.
+  - autobrr: recent grabs with indexer, filter and **time from announce to grab**, plus grabbed /
+    rejected totals.
+  - Uses qBittorrent's incremental sync (only changes travel after the first call), every 5 s.
+    Tracker names are shown by host only; passkeys never reach the page.
+  - qBittorrent needs "Bypass authentication for clients on localhost" (the card says so and how,
+    per user, if it's off). autobrr needs an API key whose name contains "dashboard".
+- **Alerts to Discord** (user menu → Alerts to Discord, or Ctrl+K): paste a webhook, choose rules,
+  send a test. Disk above 90% or full within 3 days at the last day's rate; RAID degraded /
+  rebuilding / inactive and ZFS not online; SMART failing or new bad sectors; an app down 5 minutes;
+  a CPU core at its high mark for 3 minutes; 30+ fail2ban bans in an hour. Each problem alerts
+  once, repeats every 6 hours while it lasts and says when it's fixed. Read-only and tiny
+  filesystems are ignored. The webhook is stored with mode 600 and never sent back to the browser;
+  only discord.com webhook addresses are accepted, and alerts can't ping @everyone.
+
 ## [sheergood-11] — Nov 27 2026
 
 ### Added

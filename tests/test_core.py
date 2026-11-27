@@ -732,5 +732,225 @@ class MediaQueue(unittest.TestCase):
         self.assertEqual(self.arr.media({"ARR_FILE": os.path.join(self.d, "missing.json")})["reason"], "not-configured")
 
 
+# ----------------------------------------------------------------------------- torrent racing
+class FakeResp:
+    def __init__(self, status, body):
+        self.status_code, self._b = status, body
+
+    def json(self):
+        return self._b
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            import requests
+            raise requests.HTTPError(str(self.status_code))
+
+
+class Racing(unittest.TestCase):
+    def setUp(self):
+        import core.racing as rc
+        self.rc = rc
+        self.d = tempfile.mkdtemp()
+        self.cfg = {"ARR_FILE": os.path.join(self.d, "arr.json"), "RACING_FILE": os.path.join(self.d, "r.json")}
+        with open(self.cfg["ARR_FILE"], "w") as f:
+            json.dump({"qbittorrent": [{"user": "pr", "url": "http://127.0.0.1:8080"}],
+                       "autobrr": [{"user": "pr", "url": "http://127.0.0.1:7474/autobrr", "key": "k" * 32}]}, f)
+        rc._inst.clear()
+        rc._store.update(data=None, saved=0.0)
+        rc._abr.update(t=0, data=None)
+
+    def session(self, answers):
+        calls = []
+        class S:
+            def get(_, url, params=None, **kw):
+                calls.append((url, dict(params or {}), kw.get("headers")))
+                return answers.pop(0)
+        return S(), calls
+
+    def test_sync_deltas_trackers_and_first10(self):
+        now = 1_800_000_000.0
+        full = {"rid": 1, "full_update": True, "server_state": {"up_info_speed": 100e6, "dl_info_speed": 5e6, "alltime_ul": 4e12,
+                                                                  "alltime_dl": 1e12, "free_space_on_disk": 3e11},
+                "torrents": {"a": {"name": "New.Release", "state": "uploading", "upspeed": 60e6, "uploaded": 10e9, "ratio": 1.1,
+                                   "tracker": "https://tracker.example.org/a/SECRETPASSKEY/announce", "added_on": now - 590, "size": 9e9},
+                             "b": {"name": "Old.One", "state": "stalledUP", "upspeed": 0, "uploaded": 1e9, "ratio": 3.0,
+                                   "tracker": "https://other.net/announce", "added_on": now - 9 * 86400, "size": 1e9},
+                             "c": {"name": "Getting", "state": "downloading", "upspeed": 0, "uploaded": 0, "ratio": 0,
+                                   "tracker": "", "added_on": now - 100, "size": 4e9, "progress": .25, "amount_left": 3e9}}}
+        delta = {"rid": 2, "torrents": {"a": {"uploaded": 12e9, "upspeed": 70e6}}, "torrents_removed": ["b"],
+                 "server_state": {"up_info_speed": 120e6}}
+        sess, calls = self.session([FakeResp(200, full), FakeResp(200, delta)])
+        with mock.patch.object(self.rc.time, "time", return_value=now):
+            self.rc.sync_once(self.cfg, session=sess)
+        with mock.patch.object(self.rc.time, "time", return_value=now + 20):
+            self.rc.sync_once(self.cfg, session=sess)
+        self.assertEqual([c[1]["rid"] for c in calls], [0, 1])               # incremental after the first call
+        r = self.rc.report(self.cfg, now=now + 20)
+        self.assertEqual(r["counts"]["total"], 2)                               # "b" was removed
+        self.assertEqual(r["totals"]["up"], 120e6)
+        self.assertEqual(r["ratio"], 4.0)
+        self.assertEqual(r["left_to_download"], 3e9)
+        self.assertEqual(r["top"][0]["name"], "New.Release")
+        self.assertEqual(r["top"][0]["tracker"], "example.org")                # host only, never the passkey
+        self.assertNotIn("SECRETPASSKEY", json.dumps(r))
+        trk = {x["tracker"]: x for x in r["trackers"]}
+        self.assertEqual(trk["example.org"]["today"], 2e9)                       # only growth after the first sync counts
+        new = {x["name"]: x for x in r["new"]}
+        self.assertEqual(new["New.Release"]["first10"], 12e9)                    # seen young, frozen just past 10 minutes
+        self.assertEqual(new["Getting"]["first10"], 0)                           # still inside its first 10 minutes
+
+    def test_first10_needs_to_be_seen_young(self):
+        now = 1_800_000_000.0
+        full = {"rid": 1, "full_update": True, "server_state": {},
+                "torrents": {"x": {"name": "Seen.Late", "state": "uploading", "uploaded": 5e9, "added_on": now - 1500, "tracker": ""}}}
+        sess, _ = self.session([FakeResp(200, full), FakeResp(200, {"rid": 2})])
+        with mock.patch.object(self.rc.time, "time", return_value=now):
+            self.rc.sync_once(self.cfg, session=sess)
+        with mock.patch.object(self.rc.time, "time", return_value=now + 30):
+            self.rc.sync_once(self.cfg, session=sess)
+        self.assertIsNone(self.rc.report(self.cfg, now=now + 30)["new"][0]["first10"])   # never claim a number we didn't see
+
+    def test_bypass_off_and_down(self):
+        import requests
+        sess, _ = self.session([FakeResp(403, {})])
+        self.rc.sync_once(self.cfg, session=sess)
+        self.assertEqual(self.rc.report(self.cfg)["instances"][0]["error"], "bypass-off")
+        class Down:
+            def get(self, *a, **k):
+                raise requests.ConnectionError("refused")
+        self.rc.sync_once(self.cfg, session=Down())
+        self.assertEqual(self.rc.report(self.cfg)["instances"][0]["error"], "not answering")
+
+    def test_autobrr_releases(self):
+        rel = {"data": [
+            {"name": "Show.S01E01.1080p", "indexer": {"name": "Tracker A", "identifier": "ta"}, "filter": "tv",
+             "timestamp": "2026-11-27T10:00:00Z",
+             "action_status": [{"status": "PUSH_APPROVED", "timestamp": "2026-11-27T10:00:00.8Z", "client": "qbt"}]},
+            {"torrent_name": "Rejected.Thing", "indexer": "tb", "timestamp": "2026-11-27T11:00:00+01:00",
+             "action_status": [{"status": "PUSH_REJECTED"}]}]}
+        sess, calls = self.session([FakeResp(200, rel), FakeResp(404, {})])
+        self.rc.autobrr_once(self.cfg, session=sess)
+        a = self.rc._abr["data"][0]
+        self.assertTrue(a["ok"])
+        self.assertEqual(calls[0][2], {"X-API-Token": "k" * 32})
+        g, rj = a["releases"]
+        self.assertEqual((g["status"], g["indexer"], g["grab_secs"]), ("grabbed", "Tracker A", 0.8))
+        self.assertEqual((rj["status"], rj["name"], rj["indexer"]), ("rejected", "Rejected.Thing", "tb"))
+        self.assertEqual(rj["time"], g["time"])                                  # +01:00 handled
+        self.assertEqual(a["stats"], {})                                         # stats endpoint missing: still fine
+
+    def test_autobrr_without_dashboard_key(self):
+        with open(self.cfg["ARR_FILE"], "w") as f:
+            json.dump({"autobrr": [{"user": "pr", "url": "http://127.0.0.1:7474", "key": None}]}, f)
+        self.rc.autobrr_once(self.cfg, session=None)
+        self.assertEqual(self.rc._abr["data"][0]["error"], "no-key")
+
+    def test_only_local_addresses(self):
+        with open(self.cfg["ARR_FILE"], "w") as f:
+            json.dump({"qbittorrent": [{"user": "x", "url": "http://10.0.0.5:8080"}]}, f)
+        self.assertEqual(self.rc.apps(self.cfg), ([], []))
+
+
+# ----------------------------------------------------------------------------- alerts to Discord
+class Alerts(unittest.TestCase):
+    HOOK = "https://discord.com/api/webhooks/123456789012345678/abcdefghijklmnopqrstuvwxyz_ABCDEFG-123"
+
+    def setUp(self):
+        import core.alerts as al
+        self.al = al
+        self.d = tempfile.mkdtemp()
+        self.cfg = {"ALERTS_FILE": os.path.join(self.d, "a.json"), "ALERTS_STATE_FILE": os.path.join(self.d, "s.json")}
+        al._mem.update(cfg=None, state=None, streak={})
+        self.sent = []
+        self.sender = lambda title, text, kind: (self.sent.append((title, kind)) or (True, "sent"))
+
+    def test_settings_validation_and_secrecy(self):
+        ok, msg = self.al.update_settings(self.cfg, {"webhook": "https://evil.example/api/webhooks/1/x"})
+        self.assertFalse(ok)
+        ok, _ = self.al.update_settings(self.cfg, {"webhook": self.HOOK, "rules": {"f2b": False, "bogus": True}})
+        self.assertTrue(ok)
+        self.assertEqual(os.stat(self.cfg["ALERTS_FILE"]).st_mode & 0o777, 0o600)
+        pub = self.al.public_settings(self.cfg)
+        self.assertNotIn("abcdefghij", json.dumps(pub))                          # the full webhook never goes back out
+        self.assertEqual(pub["webhook_hint"], "…FG-123")
+        self.assertFalse(pub["rules"]["f2b"])
+        self.assertNotIn("bogus", pub["rules"])
+        ok, _ = self.al.update_settings(self.cfg, {"webhook": ""})
+        self.assertFalse(self.al.public_settings(self.cfg)["configured"])
+
+    def obs(self, used=50, apps=None, **kw):
+        G = 2 ** 30
+        o = {"mounts": [{"mount": "/home", "total": 100 * G, "used": used * G},
+                        {"mount": "/snap/core", "total": 50 * G, "used": 50 * G, "readonly": True},   # never alerts
+                        {"mount": "/tiny", "total": 2 ** 20, "used": 2 ** 20}],                       # never alerts
+             "md": [], "zfs": [], "drives": [], "apps": apps or []}
+        o.update(kw)
+        return o
+
+    def test_fire_repeat_resolve(self):
+        self.al.update_settings(self.cfg, {"webhook": self.HOOK})
+        t = 1_800_000_000
+        run = lambda o, now: self.al.run_once(self.cfg, o, "box", now=now, sender=self.sender)
+        run(self.obs(used=50), t)
+        self.assertEqual(self.sent, [])
+        run(self.obs(used=95), t + 60)
+        self.assertEqual(self.sent, [("/home is 95% full", "fire")])
+        run(self.obs(used=96), t + 120)                                          # still firing: no repeat yet
+        self.assertEqual(len(self.sent), 1)
+        run(self.obs(used=96), t + 60 + 6 * 3600)                                # repeats after 6 hours
+        self.assertEqual(len(self.sent), 2)
+        run(self.obs(used=50), t + 7 * 3600)
+        self.assertEqual(self.sent[-1], ("Resolved: /home is 96% full", "ok"))
+        self.assertEqual(self.al.active(self.cfg), [])
+
+    def test_rules_raid_smart_app_cpu_f2b(self):
+        self.al.update_settings(self.cfg, {"webhook": self.HOOK})
+        t = 1_800_000_000
+        base = dict(md=[{"name": "md127", "health": "degraded", "level": "raid1", "map": "[U_]",
+                         "members": [{"dev": "sdb1", "failed": True}]}],
+                    drives=[{"name": "sda", "smart": True, "healthy": True, "realloc": 0, "pending": 0, "model": "TOSHIBA"}],
+                    apps=[{"name": "plex", "pretty": "Plex", "down_since": t - 400}], cpu_hot="Core 2 at 91 °C.", bans_1h=42)
+        self.al.run_once(self.cfg, self.obs(**base), "box", now=t, sender=self.sender)
+        titles = {x[0] for x in self.sent}
+        self.assertEqual(titles, {"RAID md127 is degraded", "Plex is down", "CPU is running hot", "42 fail2ban bans in the last hour"})
+        self.sent.clear()
+        base["drives"][0]["realloc"] = 8                                         # new bad sectors: a one-off event
+        self.al.run_once(self.cfg, self.obs(**base), "box", now=t + 60, sender=self.sender)
+        self.assertEqual(self.sent, [("Drive sda has new bad sectors", "warn")])
+        self.sent.clear()
+        self.al.run_once(self.cfg, self.obs(**base), "box", now=t + 120, sender=self.sender)
+        self.assertEqual(self.sent, [])                                          # not sent again, and no "resolved"
+        self.al.run_once(self.cfg, self.obs(**base), "box", now=t + 2 * 86400, sender=self.sender)
+        self.assertNotIn("Resolved: Drive sda has new bad sectors", [x[0] for x in self.sent])
+
+    def test_app_needs_five_minutes_and_rules_can_be_off(self):
+        self.al.update_settings(self.cfg, {"webhook": self.HOOK, "rules": {"disk": False}})
+        t = 1_800_000_000
+        self.al.run_once(self.cfg, self.obs(used=99, apps=[{"name": "sonarr", "down_since": t - 120}]), "box", now=t, sender=self.sender)
+        self.assertEqual(self.sent, [])
+
+    def test_disk_forecast(self):
+        self.al.update_settings(self.cfg, {"webhook": self.HOOK})
+        t = 1_800_000_000
+        for h in range(25):                                                      # +1 unit per hour, 80 -> 104? capped below 90
+            self.al.run_once(self.cfg, self.obs(used=60 + h), "box", now=t + h * 3600, sender=self.sender)
+        self.assertTrue(any("will be full in about" in x[0] for x in self.sent))
+
+    def test_discord_send(self):
+        self.al.update_settings(self.cfg, {"webhook": self.HOOK})
+        posted = []
+        class S:
+            def __init__(self, codes): self.codes = codes
+            def post(self, url, json=None, **kw):
+                posted.append(json)
+                return FakeResp(self.codes.pop(0), {"retry_after": 0.01})
+        with mock.patch.object(self.al.time, "sleep"):
+            self.assertEqual(self.al.send(self.cfg, "t", "x", "fire", "box", session=S([429, 204])), (True, "sent"))
+        self.assertEqual(posted[0]["allowed_mentions"], {"parse": []})           # never pings @everyone
+        ok, msg = self.al.send(self.cfg, "t", "x", "fire", "box", session=S([404]))
+        self.assertFalse(ok)
+        self.assertIn("doesn't exist", msg)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

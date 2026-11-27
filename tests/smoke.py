@@ -13,8 +13,8 @@ htpasswd = os.path.join(tmp, "htpasswd")
 import hashlib  # flask-htpasswd accepts {SHA} entries
 digest = base64.b64encode(hashlib.sha1(b"smoke").digest()).decode()
 open(htpasswd, "w").write("smoke:{SHA}" + digest + "\n")
-open("swizzin.cfg", "w").write("ADMIN_USER = 'smoke'\nFLASK_HTPASSWD_PATH = %r\nRATELIMIT_ENABLED = False\nPLACE_LOOKUPS = False\nPREFS_FILE = %r\nSPEEDTEST_FILE = %r\n" % (
-    htpasswd, os.path.join(tmp, "prefs.json"), os.path.join(tmp, "speedtest.json")))
+open("swizzin.cfg", "w").write("ADMIN_USER = 'smoke'\nFLASK_HTPASSWD_PATH = %r\nRATELIMIT_ENABLED = False\nPLACE_LOOKUPS = False\nPREFS_FILE = %r\nSPEEDTEST_FILE = %r\nALERTS_FILE = %r\nALERTS_STATE_FILE = %r\n" % (
+    htpasswd, os.path.join(tmp, "prefs.json"), os.path.join(tmp, "speedtest.json"), os.path.join(tmp, "alerts.json"), os.path.join(tmp, "alerts-state.json")))
 
 sys.path.insert(0, os.getcwd())
 try:
@@ -28,7 +28,7 @@ bad = 0
 for path, needs_auth in [("/login", False), ("/", True), ("/classic", True), ("/api/system", True), ("/api/live", True),
                          ("/api/live", True), ("/api/storage", True), ("/api/traffic", True), ("/api/place", True),
                          ("/api/fail2ban", True), ("/api/weather?lat=1&lon=2", True), ("/apps/status", True),
-                         ("/api/specs", True), ("/api/plex", True), ("/api/procs", True), ("/api/speedtest", True), ("/api/media", True), ("/api/uptime", True), ("/api/fail2ban", True)]:
+                         ("/api/specs", True), ("/api/plex", True), ("/api/procs", True), ("/api/speedtest", True), ("/api/media", True), ("/api/uptime", True), ("/api/fail2ban", True), ("/api/racing", True), ("/api/alerts", True)]:
     r = client.get(path, headers=auth if needs_auth else {})
     ok = r.status_code == 200
     print("{:4} {}".format(r.status_code, path))
@@ -63,6 +63,12 @@ checks.append(("POST /apps/service without XHR", client.post("/apps/service", he
 checks.append(("POST /apps/service bad action", client.post("/apps/service", headers=xhr, json={"application": "panel", "function": "mask"}).status_code, 400))
 checks.append(("POST /apps/service bad name", client.post("/apps/service", headers=xhr, json={"application": "../x", "function": "restart"}).status_code, 400))
 r = client.get("/", headers=auth)
+# alerts: own XHR only, Discord webhooks only, webhook never echoed back
+checks.append(("POST /api/alerts without XHR", client.post("/api/alerts", headers=auth, json={"rules": {}}).status_code, 403))
+checks.append(("POST /api/alerts non-Discord webhook", client.post("/api/alerts", headers=xhr, json={"webhook": "https://evil.example/x"}).status_code, 400))
+hook = "https://discord.com/api/webhooks/123456789012345678/abcdefghijklmnopqrstuvwxyz_ABCDEFG-123"
+r = client.post("/api/alerts", headers=xhr, json={"webhook": hook})
+checks.append(("POST /api/alerts saves, never echoes the secret", (r.status_code, "abcdefghij" in r.get_data(as_text=True)), (200, False)))
 checks.append(("X-Frame-Options", r.headers.get("X-Frame-Options"), "SAMEORIGIN"))
 checks.append(("nosniff", r.headers.get("X-Content-Type-Options"), "nosniff"))
 checks.append(("signing secret is not the public default", swizzin.app.config["FLASK_SECRET"] != "What's the password?" and len(swizzin.app.config["FLASK_SECRET"]) >= 32, True))

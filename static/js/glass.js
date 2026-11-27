@@ -1325,6 +1325,7 @@
     if (S.admin) {
       add("Server", "Show server specifications", () => document.querySelector('[data-pop="popSpecs"]').click());
       add("Server", "Run speed test", () => { document.querySelector('[data-pop="popSpecs"]').click(); setTimeout(() => { const b = $("speedRun"); if (b && !b.disabled) runSpeed(b); }, 400); }, { hint: "M-Lab, about 20 s" });
+      if (dlg) add("Server", "Alerts to Discord", alertsOpen, { hint: "webhook and rules" });
       add("Server", "Copy IPv4 address", () => { const b = document.querySelector('[data-copy="ip4"]'); if (b && !b.hidden) b.click(); });
     }
     [["auto", "Auto (follows the sun)"], ["day", "Light"], ["night", "Dark"]].forEach(([m, n]) => add("Theme", `Theme: ${n}`, () => { SKY.setMode(m); savePrefs(); }));
@@ -1400,6 +1401,147 @@
       $("quota").innerHTML = barRow("Home", [{ v: p, c: l === "good" ? css("--s1") : levelColor(l) }], `${d.diskused} / ${d.disktotal}`);
       $("quotaLine").textContent = `${d.diskfree} free`;
     } catch (_) { /* quota not installed */ }
+  }
+
+  /* ============================================================ torrent racing (qBittorrent + autobrr) */
+  const qrate = (Bps) => { const b = (Bps || 0) * 8; return b >= 1e9 ? (b / 1e9).toFixed(2) + " Gbit/s" : b >= 1e6 ? (b / 1e6).toFixed(b >= 1e8 ? 0 : 1) + " Mbit/s" : b > 0 ? (b / 1e3).toFixed(0) + " kbit/s" : "0"; };
+  const ageText = (s) => s < 60 ? `${Math.round(s)} s` : s < 3600 ? `${Math.round(s / 60)} min` : `${(s / 3600).toFixed(s < 36000 ? 1 : 0)} h`;
+  async function loadRacing() {
+    const d = await getJSON(S.api.racing), card = $("raceCard");
+    if (!d.available) { card.hidden = true; return; }
+    card.hidden = false;
+    const ok = d.instances.filter((i) => i.ok), off = d.instances.filter((i) => i.error === "bypass-off"),
+      down = d.instances.filter((i) => !i.ok && i.error !== "bypass-off");
+    $("raceNote").textContent = d.instances.length
+      ? `qBittorrent${d.instances.length > 1 ? " ×" + d.instances.length : ""} · ${d.counts.total.toLocaleString()} torrents · live every ${d.sync_every} s`
+      : "autobrr";
+    $("raceLinks").innerHTML = ["qbittorrent", "autobrr"].map((n) => {
+      const p = (S.pages || []).find((x) => x.name === n);
+      return p && p.url ? `<a class="pill pop-mini" href="${esc(p.url)}" target="_blank" rel="noopener">${esc(p.pretty_name)}</a>` : "";
+    }).join("");
+    const warn = [];
+    if (off.length) warn.push(`<b>qBittorrent${off.length < d.instances.length ? " for " + esc(off.map((i) => i.user).join(", ")) : ""} needs one setting.</b>
+      In qBittorrent open <i>Tools → Options → Web UI</i>, tick <i>Bypass authentication for clients on localhost</i> and save. The panel only reads stats.`);
+    if (down.length) warn.push(`qBittorrent for ${esc(down.map((i) => i.user).join(", "))} isn't answering.`);
+    $("raceWarn").innerHTML = warn.map((w) => `<p>${w}</p>`).join(""); $("raceWarn").hidden = !warn.length;
+    const t = d.totals, c = d.counts;
+    const fits = t.free != null && d.left_to_download > 0 ? (d.left_to_download > t.free ? " crit" : d.left_to_download > t.free * 0.8 ? " warn" : "") : "";
+    $("raceStats").innerHTML = !ok.length ? "" : [
+      ["Upload now", qrate(t.up), `${c.uploading} torrent${c.uploading === 1 ? "" : "s"} uploading`],
+      ["Download now", qrate(t.down), `${c.downloading} downloading`],
+      ["Ratio", d.ratio != null ? d.ratio.toFixed(2) : "–", `▲ ${bytes(t.alltime_up, 1)} all time`],
+      ["This session", "▲ " + bytes(t.session_up, 1), `▼ ${bytes(t.session_down, 1)}`],
+      ["Still to download", bytes(d.left_to_download, 1), t.free != null ? `${bytes(t.free, 1)} free on disk` : "", fits],
+      ["Needs a look", String(c.errored + c.stalled), `${c.errored} errored · ${c.stalled} stalled`],
+    ].map(([k, v, sub, cls]) => `<div class="metric${cls || ""}"><small>${k}</small><b>${esc(v)}</b><span class="muted">${esc(sub)}</span></div>`).join("");
+    $("raceTopN").textContent = d.top.length ? `${d.top.length} shown` : "";
+    $("raceTop").innerHTML = d.top.length ? d.top.map((r) => `<div class="race-row" title="${esc(r.name)}">
+        <span class="race-name">${esc(r.name)}</span>
+        <span class="race-trk-chip">${esc(r.tracker || "–")}</span>
+        <b class="race-num">${esc(qrate(r.upspeed))}</b><span class="race-sub">ratio ${r.ratio.toFixed(2)}</span></div>`).join("")
+      : `<div class="empty">Nothing uploading right now</div>`;
+    $("raceNew").innerHTML = d.new.length ? d.new.map((r) => `<div class="race-row" title="${esc(r.name)}">
+        <span class="race-name">${esc(r.name)}</span>
+        <span class="race-trk-chip">${esc(ageText(r.age))} ago</span>
+        <b class="race-num" title="Uploaded in its first 10 minutes">${r.first10 == null ? "–" : esc(bytes(r.first10, 1))}${r.age < 600 && r.first10 != null ? "…" : ""}</b>
+        <span class="race-sub">${r.ratio.toFixed(2)}${r.upspeed > 0 ? " · " + esc(qrate(r.upspeed)) : ""}</span></div>`).join("")
+      : `<div class="empty">No new torrents today</div>`;
+    const tmax = Math.max(1, ...d.trackers.map((x) => x.week));
+    $("raceTrk").innerHTML = d.trackers.length ? d.trackers.map((x) => `<div class="ccrow" title="${esc(x.tracker)}: ${esc(bytes(x.today, 2))} today, ${esc(bytes(x.week, 2))} in 7 days">
+        <span class="ccname">${esc(x.tracker)}</span>
+        <span class="ccbar"><i style="width:${Math.max(2, (x.today / tmax) * 100).toFixed(1)}%"></i></span>
+        <b>${esc(bytes(x.today, 1))}</b></div>`).join("") + `<p class="muted race-foot">Counted while the panel is running.</p>`
+      : `<div class="empty">Collecting — appears as torrents upload</div>`;
+    const ab = d.autobrr;
+    $("raceAbrBox").hidden = !d.has_autobrr;
+    if (d.has_autobrr) {
+      if (!ab) { $("raceAbr").innerHTML = `<div class="empty">Checking autobrr…</div>`; $("raceAbrNote").textContent = ""; }
+      else {
+        const a = ab[0] || {}, noKey = ab.filter((x) => x.error === "no-key").length, st = a.stats || {};
+        $("raceAbrNote").textContent = a.ok && st.push_approved_count != null ? `${st.push_approved_count.toLocaleString()} grabbed · ${(st.push_rejected_count || 0).toLocaleString()} rejected` : "";
+        $("raceAbr").innerHTML = noKey ? `<div class="empty">In autobrr open <i>Settings → API keys</i> and create a key named <b>dashboard</b>; it shows up here within the hour.</div>`
+          : !a.ok ? `<div class="empty">autobrr ${esc(a.error || "isn't answering")}</div>`
+          : (a.releases || []).filter((r) => r.status === "grabbed").slice(0, 8).map((r) => `<div class="race-row" title="${esc(r.name)}">
+              <span class="race-name">${esc(r.name)}</span>
+              <span class="race-trk-chip">${esc(r.indexer)}${r.filter ? " · " + esc(r.filter) : ""}</span>
+              <b class="race-num" title="Time from announce to sending it to the client">${r.grab_secs == null ? "–" : esc(r.grab_secs.toFixed(1)) + " s"}</b>
+              <span class="race-sub">${r.time ? esc(ageText(Date.now() / 1000 - r.time)) + " ago" : ""}</span></div>`).join("") || `<div class="empty">No grabs yet</div>`;
+      }
+    }
+  }
+
+  /* ============================================================ alerts to Discord (dialog) */
+  const RULE_TEXT = {
+    disk: ["Disk space", (l) => `A disk above ${l.disk_pct}% full, or on track to fill within ${l.disk_days} days`],
+    raid: ["RAID", () => "An array degraded, rebuilding or inactive; a ZFS pool not online"],
+    smart: ["Drive health", () => "SMART check failing, or new bad sectors"],
+    app: ["Apps", (l) => `An app that should be running is down for ${l.app_minutes} minutes`],
+    cpu: ["CPU temperature", () => "A core at its high mark for 3 minutes"],
+    f2b: ["Attacks", (l) => `${l.f2b_per_hour} or more fail2ban bans in an hour`],
+  };
+  const dlg = $("alertsDlg");
+  let alertsBack = null;
+  async function loadAlerts(paint) {
+    const a = await getJSON(S.api.alerts);
+    const badge = $("alertsBadge");
+    if (badge) { badge.hidden = !a.active.length; badge.textContent = a.active.length ? String(a.active.length) : ""; }
+    if (!paint) return a;
+    $("alertsStatus").textContent = a.configured ? `Sending to the webhook ending ${a.webhook_hint}. Repeats every ${a.limits.repeat_hours} hours while a problem lasts, and says when it's fixed.`
+      : "Not set up yet. Paste a Discord webhook to get alerts on your phone.";
+    $("alertsRemove").hidden = !a.configured;
+    $("alertsHook").placeholder = a.configured ? `Saved (…${a.webhook_hint.slice(1)}). Paste a new one to replace it.` : "https://discord.com/api/webhooks/…";
+    $("alertsActive").innerHTML = a.active.length ? `<div class="sub-head"><span>Happening now</span></div>` + a.active.map((x) =>
+      `<div class="alert-row ${esc(x.kind)}"><b>${esc(x.title)}</b>${x.text ? `<span>${esc(x.text)}</span>` : ""}<small class="muted">since ${esc(ago(Date.now() / 1000 - x.since))}</small></div>`).join("") : "";
+    $("alertsRules").innerHTML = Object.entries(RULE_TEXT).map(([k, [name, txt]]) =>
+      `<label class="row-toggle"><span><b>${esc(name)}</b><small class="muted">${esc(txt(a.limits))}</small></span><input type="checkbox" data-rule="${k}" ${a.rules[k] ? "checked" : ""}><i></i></label>`).join("");
+    return a;
+  }
+  async function postAlerts(body) {
+    const r = await fetch(S.api.alerts, { method: "POST", credentials: "same-origin",
+      headers: { "Content-Type": "application/json", "X-Requested-With": "XMLHttpRequest" }, body: JSON.stringify(body) });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.message || d.error || "HTTP " + r.status);
+    return d;
+  }
+  function alertsOpen() {
+    alertsBack = document.activeElement; $("menu").hidden = true; $("menuBtn").setAttribute("aria-expanded", "false");
+    $("alertsErr").textContent = ""; $("alertsHook").value = "";
+    dlg.hidden = false; loadAlerts(true).catch(() => { $("alertsStatus").textContent = "Couldn't load the alert settings."; });
+    setTimeout(() => $("alertsHook").focus(), 30);
+  }
+  function alertsClose() { dlg.hidden = true; if (alertsBack && alertsBack.focus) alertsBack.focus(); }
+  if (dlg) {
+    $("alertsOpen").addEventListener("click", alertsOpen);
+    $("alertsClose").addEventListener("click", alertsClose);
+    dlg.addEventListener("mousedown", (e) => { if (e.target === dlg) alertsClose(); });
+    document.addEventListener("keydown", (e) => {
+      if (dlg.hidden) return;
+      if (e.key === "Escape") { e.preventDefault(); alertsClose(); return; }
+      if (e.key === "Tab") {                                   // keep focus inside the dialog
+        const f = [...dlg.querySelectorAll("button:not([hidden]), input")].filter((x) => x.offsetParent);
+        if (!f.length) return;
+        if (e.shiftKey && document.activeElement === f[0]) { e.preventDefault(); f[f.length - 1].focus(); }
+        else if (!e.shiftKey && document.activeElement === f[f.length - 1]) { e.preventDefault(); f[0].focus(); }
+      }
+    });
+    const busy = async (btn, fn) => {
+      btn.disabled = true; $("alertsErr").textContent = "";
+      try { await fn(); } catch (err) { $("alertsErr").textContent = err.message; } finally { btn.disabled = false; if (!dlg.hidden) btn.focus(); }
+    };
+    const rulesNow = () => Object.fromEntries([...dlg.querySelectorAll("[data-rule]")].map((i) => [i.dataset.rule, i.checked]));
+    $("alertsSave").addEventListener("click", (e) => busy(e.currentTarget, async () => {
+      const hook = $("alertsHook").value.trim(), body = { rules: rulesNow() };
+      if (hook) body.webhook = hook;
+      await postAlerts(body); $("alertsHook").value = ""; await loadAlerts(true); toast("Alert settings saved");
+    }));
+    $("alertsTest").addEventListener("click", (e) => busy(e.currentTarget, async () => {
+      const hook = $("alertsHook").value.trim();
+      if (hook) { await postAlerts({ webhook: hook, rules: rulesNow() }); $("alertsHook").value = ""; await loadAlerts(true); }
+      await postAlerts({ action: "test" }); toast("Test sent — check Discord");
+    }));
+    $("alertsRemove").addEventListener("click", (e) => busy(e.currentTarget, async () => {
+      await postAlerts({ webhook: "" }); await loadAlerts(true); toast("Webhook removed; alerts are off");
+    }));
   }
 
   /* ============================================================ media queue (Sonarr / Radarr) */
@@ -1510,6 +1652,8 @@
     every(60000, loadF2b);
     every(60000, loadUptime);
     every(60000, loadMedia);
+    every(5000, loadRacing);
+    if (dlg) every(60000, () => loadAlerts(false));
     loadPlex.recheck = true;
     every(5000, loadPlex);
     setInterval(tickClock, 1000);

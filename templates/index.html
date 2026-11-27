@@ -86,6 +86,7 @@
         <label class="row-toggle"><span>Liquid refraction</span><input type="checkbox" id="optRefraction" checked><i></i></label>
         <label class="row-toggle"><span>Ambient motion</span><input type="checkbox" id="optMotion" checked><i></i></label>
         <hr>
+        {% if admin %}<button class="menu-item" id="alertsOpen">Alerts to Discord<span class="menu-badge" id="alertsBadge" hidden></span></button>{% endif %}
         {% if admin and 'netdata' in pages|map(attribute='name') %}<a href="{{ url_for('stats') }}">Netdata stats</a>{% endif %}
         <a href="{{ url_for('classic') }}">Classic dashboard</a>
         <a href="{{ url_for('logout') }}">Log out</a>
@@ -202,6 +203,21 @@
     </section>
 
     <!-- Data transferred (vnstat) -->
+    <section class="glass card" data-span="12" id="raceCard" hidden>
+      <div class="card-head">
+        <div><h2>Torrent racing</h2><p class="muted" id="raceNote">–</p></div>
+        <div class="media-links" id="raceLinks"></div>
+      </div>
+      <div class="race-warn" id="raceWarn" hidden></div>
+      <div class="race-stats" id="raceStats"></div>
+      <div class="race-cols">
+        <div><div class="sub-head"><span>Top uploaders now</span><span class="muted" id="raceTopN"></span></div><div class="race-list" id="raceTop"></div></div>
+        <div><div class="sub-head"><span>New in the last 24 hours</span><span class="muted">first 10 min · ratio</span></div><div class="race-list" id="raceNew"></div></div>
+        <div><div class="sub-head"><span>Upload by tracker</span><span class="muted">today · 7 days</span></div><div class="race-trk" id="raceTrk"></div></div>
+        <div id="raceAbrBox"><div class="sub-head"><span>autobrr</span><span class="muted" id="raceAbrNote"></span></div><div class="race-list" id="raceAbr"></div></div>
+      </div>
+    </section>
+
     <section class="glass card" data-span="12" id="plexCard" hidden>
       <div class="card-head">
         <div><h2>Now playing <span class="muted plex-tag">Plex</span></h2><p class="muted" id="plexNote">–</p></div>
@@ -348,6 +364,30 @@
     </div>
   </div>
 
+  {% if admin %}
+  <div class="cmdk-back" id="alertsDlg" hidden>
+    <div class="cmdk alerts-dlg glass" role="dialog" aria-modal="true" aria-labelledby="alertsTitle">
+      <div class="alerts-head"><h2 id="alertsTitle">Alerts to Discord</h2><button class="icon-btn" id="alertsClose" aria-label="Close">✕</button></div>
+      <div class="alerts-body">
+        <p class="muted" id="alertsStatus">–</p>
+        <div class="alerts-active" id="alertsActive"></div>
+        <label class="field"><span>Discord webhook</span>
+          <input id="alertsHook" type="url" inputmode="url" autocomplete="off" spellcheck="false" placeholder="https://discord.com/api/webhooks/…">
+          <small class="muted">In Discord: Server settings → Integrations → Webhooks → New webhook → Copy webhook URL. It's kept on the server and never shown again in full.</small>
+        </label>
+        <div class="alerts-rules" id="alertsRules"></div>
+        <p class="field-err" id="alertsErr" role="alert"></p>
+      </div>
+      <div class="alerts-foot">
+        <button class="pill" id="alertsRemove" hidden>Remove webhook</button>
+        <span style="flex:1"></span>
+        <button class="pill" id="alertsTest">Send test</button>
+        <button class="pill primary" id="alertsSave">Save</button>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
   <div class="tooltip glass" id="tip" role="status" hidden></div>
   <div class="toast glass" id="toast" role="status" hidden></div>
 
@@ -374,6 +414,8 @@
         prefs: {{ url_for('api_prefs')|tojson }},
         uptime: {{ url_for('api_uptime')|tojson }},
         media: {{ url_for('api_media')|tojson }},
+        racing: {{ url_for('api_racing')|tojson }},
+        alerts: {{ url_for('api_alerts')|tojson }},
         status: {{ url_for('app_status')|tojson }},
         service: {{ url_for('service')|tojson }},
         quota: {{ url_for('quota_free')|tojson }}

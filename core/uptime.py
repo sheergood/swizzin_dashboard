@@ -62,9 +62,13 @@ def record(statuses, cfg, now=None):
                 off += 1               # stopped and disabled on purpose
             a[h] = [up, expected, off]
             a["_last"] = "up" if s.get("active") else "down" if s.get("enabled") else "off"
+            if a["_last"] == "down":
+                a.setdefault("_down_since", now)
+            else:
+                a.pop("_down_since", None)
         cutoff = int(now // 3600 * 3600) - KEEP_HOURS * 3600
         for a in list(d["apps"].values()) + [p]:
-            for k in [k for k in a if not k.startswith("_") and int(k) < cutoff]:
+            for k in [k for k in a if k[0].isdigit() and int(k) < cutoff]:
                 del a[k]
         if now - _state["saved"] > SAVE_EVERY:
             save(cfg)
@@ -111,3 +115,10 @@ def report(cfg, installed=None, now=None):
                         "pct": round(100.0 * up_t / exp_t, 2) if exp_t else None})
         panel = [d["panel"].get(str(t), 0) for t in hours]
     return {"start": first, "apps": out, "panel_samples": panel, "interval": INTERVAL}
+
+
+def down_since(cfg):
+    """{app: epoch} for apps that should be running and aren't, since when (for alerts)."""
+    with _lock:
+        d = _load(cfg)
+        return {n: a["_down_since"] for n, a in d["apps"].items() if a.get("_down_since")}

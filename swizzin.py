@@ -118,6 +118,9 @@ import core.prefs as prefs
 import core.ipcountry as ipcountry
 import core.uptime as uptime
 import core.arr as arr
+import core.racing as racing
+import core.alerts as alerts
+import socket as _socket
 
 #Prepare the background threads
 thread = None
@@ -416,6 +419,81 @@ def api_prefs(user):
 def api_media(user):
     return arr.media(app.config)
 
+@app.route('/api/racing')
+@htpasswd.required
+@_api
+def api_racing(user):
+    return racing.report(app.config)
+
+
+@app.route('/api/alerts', methods=['GET', 'POST'])
+@htpasswd.required
+@_api
+def api_alerts(user):
+    if flask.request.method == 'POST':
+        if not _same_site_xhr():
+            return {"error": "forbidden"}, 403
+        data = flask.request.get_json(silent=True) or {}
+        if data.get("action") == "test":
+            ok, msg = alerts.send(app.config, "Test from your swizzin dashboard",
+                                  "Alerts are working. You'll hear from this server when something needs attention.",
+                                  "test", _socket.gethostname())
+            return ({"ok": ok, "message": msg}, 200 if ok else 400)
+        ok, msg = alerts.update_settings(app.config, data)
+        if not ok:
+            return {"ok": False, "message": msg}, 400
+    out = alerts.public_settings(app.config)
+    out["active"] = alerts.active(app.config)
+    return out
+
+
+def _alert_observations():
+    """What the alert rules look at, gathered from what the panel already measures."""
+    now = time.time()
+    obs = {"mounts": hw.mounts_usage(get_mounts())}
+    for m in obs["mounts"]:
+        try:
+            m["readonly"] = bool(os.statvfs(m["mount"]).f_flag & os.ST_RDONLY)
+        except OSError:
+            m["readonly"] = True
+    r = hw.raid()
+    obs["md"], obs["zfs"] = r.get("md") or [], r.get("zfs") or []
+    obs["drives"] = hw.drives()
+    apps_down = []
+    for name, since in uptime.down_since(app.config).items():
+        try:
+            pretty = str_to_class(name + "_meta").pretty_name
+        except Exception:
+            pretty = name
+        apps_down.append({"name": name, "pretty": pretty, "down_since": since})
+    obs["apps"] = apps_down
+    hot = None
+    try:
+        _, _, by_core, _ = hw._temps()
+        worst = max(((t["c"], t["high"] or 90.0, k) for k, t in by_core.items()), default=None)
+        if worst and worst[0] >= worst[1]:
+            hot = "Core {} at {:.0f} °C (its high mark is {:.0f} °C).".format(worst[2][1], worst[0], worst[1])
+    except Exception:
+        pass
+    streak = alerts._mem["streak"]
+    streak["cpu"] = streak.get("cpu", 0) + 1 if hot else 0
+    obs["cpu_hot"] = hot if streak["cpu"] >= alerts.CPU_CHECKS else None
+    f2b = hw.fail2ban()
+    obs["bans_1h"] = sum(1 for b in f2b.get("recent") or [] if (b.get("time") or 0) > now - 3600) if f2b.get("available") else 0
+    return obs
+
+
+def _alerts_loop():
+    host = _socket.gethostname()
+    while True:
+        try:
+            with app.app_context():
+                alerts.run_once(app.config, _alert_observations(), host)
+        except Exception as e:
+            app.logger.warning("alerts check failed: %s", e)
+        socketio.sleep(alerts.INTERVAL)
+
+
 @app.route('/api/uptime')
 @htpasswd.required
 @_api
@@ -673,6 +751,10 @@ def logout(user):
 if __name__ == '__main__':
     if app.config.get('UPTIME_SAMPLER', True):
         socketio.start_background_task(_uptime_loop)
+    if app.config.get('RACING_SYNC', True):
+        socketio.start_background_task(racing.loop, app.config, socketio.sleep)
+    if app.config.get('ALERTS', True):
+        socketio.start_background_task(_alerts_loop)
     socketio.run(app, host=app.config['HOST'], port=app.config['PORT'])
 
     #app.run(debug=True,host='0.0.0.0', port=8333)
