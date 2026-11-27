@@ -115,6 +115,9 @@ import core.specs as specs
 import core.plex as plex
 import core.speedtest as speedtest
 import core.prefs as prefs
+import core.ipcountry as ipcountry
+import core.uptime as uptime
+import core.arr as arr
 
 #Prepare the background threads
 thread = None
@@ -334,7 +337,24 @@ def api_weather(user):
 @htpasswd.required
 @_api
 def api_fail2ban(user):
-    return hw.fail2ban()
+    d = hw.fail2ban()
+    if d.get("available"):
+        recent = d.get("recent") or []
+        counts = d.pop("ips_7d", None)
+        window = "7d"
+        if not isinstance(counts, list):        # older collector: count what the recent list has
+            window, tally = "recent", {}
+            for b in recent:
+                tally[b.get("ip")] = tally.get(b.get("ip"), 0) + 1
+            counts = list(tally.items())
+        counts = [(c[0], int(c[1])) for c in counts[:500] if isinstance(c, (list, tuple)) and len(c) == 2]
+        cc = ipcountry.countries({ip for ip, _ in counts} | {b.get("ip") for b in recent}, app.config)
+        for b in recent:
+            b["cc"] = cc.get(b.get("ip"))
+        top, other, unknown = ipcountry.summarize(counts, cc)
+        d["countries"] = {"top": top, "other": other, "unknown": unknown, "window": window,
+                          "lookups": bool(app.config.get("PLACE_LOOKUPS", True))}
+    return d
 
 @app.route('/api/procs')
 @htpasswd.required
@@ -389,6 +409,33 @@ def api_prefs(user):
             app.logger.warning("couldn't save preferences: %s", e)
             return flask.jsonify({"error": "couldn't save preferences"}), 500
     return flask.jsonify(prefs.get(app.config, user))
+
+@app.route('/api/media')
+@htpasswd.required
+@_api
+def api_media(user):
+    return arr.media(app.config)
+
+@app.route('/api/uptime')
+@htpasswd.required
+@_api
+def api_uptime(user):
+    try:
+        installed = [a["name"] for a in apps_status(user)]
+    except Exception:
+        installed = None
+    return uptime.report(app.config, installed)
+
+
+def _uptime_loop():
+    """Once a minute: which installed apps are running (for the 24-hour uptime strips)."""
+    while True:
+        try:
+            with app.app_context():
+                uptime.record(apps_status(admin_user), app.config)
+        except Exception as e:  # never let the sampler die
+            app.logger.warning("uptime sample failed: %s", e)
+        socketio.sleep(uptime.INTERVAL)
 
 @socketio.on('connect', namespace='/websocket')
 def socket_connect():
@@ -624,6 +671,8 @@ def logout(user):
     return flask.render_template('logout.html')
 
 if __name__ == '__main__':
+    if app.config.get('UPTIME_SAMPLER', True):
+        socketio.start_background_task(_uptime_loop)
     socketio.run(app, host=app.config['HOST'], port=app.config['PORT'])
 
     #app.run(debug=True,host='0.0.0.0', port=8333)

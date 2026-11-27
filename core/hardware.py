@@ -736,9 +736,26 @@ def traffic():
         rx, tx = hmap.get(t, (0, 0))
         hours24.append({"time": t.strftime("%Y-%m-%dT%H:00"), "rx": rx, "tx": tx})
 
+    # this calendar month day by day (vnstat 2 keeps 62 days by default), and a straight-line
+    # projection of the month's total from the days so far
+    import calendar as _cal
+    month_days = []
+    for dnum in range(1, today.day + 1):
+        dd = today.replace(day=dnum)
+        rx, tx = days.get(dd, (0, 0))
+        month_days.append({"date": dd.isoformat(), "rx": rx, "tx": tx, "known": dd in days})
+    dim = _cal.monthrange(today.year, today.month)[1]
+    elapsed = today.day - 1 + (dt.datetime.now().hour * 3600 + dt.datetime.now().minute * 60) / 86400.0
+    proj = None
+    if elapsed >= 1:
+        proj = {"rx": month[0] / elapsed * dim, "tx": month[1] / elapsed * dim}
+
     data = {
         "available": True,
         "hours": hours24,
+        "month_days": month_days,
+        "month_len": dim,
+        "month_projection": proj,
         "iface": di.get("name") or di.get("id"),
         "since": since,
         "today": total([today]),

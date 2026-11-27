@@ -30,7 +30,7 @@ def get_btime_utc():
             return btime
 
 boottimestamp = get_btime_utc()
-boottimeutc = datetime.datetime.utcfromtimestamp(boottimestamp).strftime('%b %d, %Y %H:%M:%S')
+boottimeutc = datetime.datetime.fromtimestamp(boottimestamp, datetime.timezone.utc).strftime('%b %d, %Y %H:%M:%S')
 
 def str_to_class(str):
     return getattr(sys.modules[__name__], str)

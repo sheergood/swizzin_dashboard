@@ -7,3 +7,7 @@ speedtest.json.tmp
 prefs.json
 prefs.json.tmp
 .flask_secret
+ipcountry.json
+ipcountry.json.tmp
+uptime.json
+uptime.json.tmp

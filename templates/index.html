@@ -67,6 +67,9 @@
     </div>
     {% endif %}
     <nav class="menu">
+      <button class="pill cmd-btn" id="cmdOpen" aria-haspopup="dialog" aria-keyshortcuts="Control+K Meta+K" title="Search apps and commands (Ctrl+K)">
+        <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><circle cx="11" cy="11" r="6.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M16 16l4 4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        <span class="cmd-label">Search</span><kbd class="cmd-kbd" id="cmdKbd">Ctrl K</kbd></button>
       <button class="pill" id="menuBtn" aria-haspopup="true" aria-expanded="false">{{ user }} <span class="caret">▾</span></button>
       <div class="dropdown glass" id="menu" hidden>
         <div class="menu-sky">
@@ -207,12 +210,25 @@
       <div id="plexList"></div>
     </section>
 
+    <section class="glass card" data-span="12" id="mediaCard" hidden>
+      <div class="card-head">
+        <div><h2>Media queue</h2><p class="muted" id="mediaNote">–</p></div>
+        <div class="media-links" id="mediaLinks"></div>
+      </div>
+      <div class="media-cols">
+        <div><div class="sub-head"><span>Downloading</span><span class="muted" id="mqCount"></span></div><div class="mq" id="mediaQueue"></div></div>
+        <div><div class="sub-head"><span id="mcTitle">Coming up</span><span class="muted" id="mcCount"></span></div><div class="mc" id="mediaCal"></div></div>
+      </div>
+    </section>
+
     <section class="glass card" data-span="12" id="trafficCard">
       <div class="card-head">
         <div><h2>Data transferred</h2><p class="muted" id="trafficNote">Loading vnstat history…</p></div>
         <div class="seg" role="tablist" aria-label="Last 7 days view">
           <button role="tab" aria-selected="true" data-view="chart">7 days</button>
           <button role="tab" aria-selected="false" data-view="hours">24 hours</button>
+          <button role="tab" aria-selected="false" data-view="month">This month</button>
+          <button role="tab" aria-selected="false" data-view="year">12 months</button>
           <button role="tab" aria-selected="false" data-view="table">Table</button>
         </div>
       </div>
@@ -222,6 +238,9 @@
           <div class="sub-head"><span id="weekTitle">Last 7 days</span><span class="legend"><span><i class="dot s2"></i>Upload</span><span><i class="dot s1"></i>Download</span></span></div>
           <div class="bars" id="bars" role="img" aria-label="Upload and download per day for the last 7 days"></div>
           <div class="bars hours" id="hourBars" role="img" aria-label="Upload and download per hour for the last 24 hours" hidden></div>
+          <div class="bars month" id="monthBars" role="img" aria-label="Upload and download per day this month" hidden></div>
+          <div class="bars year" id="yearBars" role="img" aria-label="Upload and download per month for the last 12 months" hidden></div>
+          <div class="month-foot" id="monthFoot" hidden></div>
           <div class="week-table" id="weekTable" hidden></div>
         </div>
       </div>
@@ -257,6 +276,11 @@
     <section class="glass card" data-span="5" id="f2bCard">
       <div class="card-head"><div><h2>Security</h2><p class="muted" id="f2bNote">fail2ban · loading…</p></div><span class="badge" id="f2bState"></span></div>
       <div class="f2b-stats" id="f2bStats"></div>
+      <div class="f2b-cc-wrap" id="f2bCcWrap" hidden>
+        <div class="sub-head"><span id="f2bCcTitle">Bans by country</span></div>
+        <div class="f2b-cc" id="f2bCountries"></div>
+        <p class="muted f2b-cc-note" id="f2bCcNote"></p>
+      </div>
       <div class="sub-head"><span>Recent bans</span><span class="muted" id="f2bJails"></span></div>
       <div class="f2b-list" id="f2bList"></div>
     </section>
@@ -298,7 +322,30 @@
       </div>
       <div class="apps" id="apps"></div>
     </section>
+
+    {% if admin %}
+    <section class="glass card" data-span="12" id="uptimeCard" hidden>
+      <div class="card-head">
+        <div><h2>App uptime</h2><p class="muted" id="uptimeNote">Last 24 hours · checked every minute</p></div>
+        <span class="legend up-legend"><span><i class="uc ok"></i>Running</span><span><i class="uc part"></i>Partly down</span><span><i class="uc down"></i>Down</span><span><i class="uc off"></i>Stopped on purpose / no data</span></span>
+      </div>
+      <div class="up-grid" id="uptimeGrid"></div>
+    </section>
+    {% endif %}
   </main>
+  </div>
+
+  <div class="cmdk-back" id="cmdk" hidden>
+    <div class="cmdk glass" role="dialog" aria-modal="true" aria-label="Search apps and commands">
+      <div class="cmdk-in">
+        <svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true"><circle cx="11" cy="11" r="6.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M16 16l4 4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        <input id="cmdkInput" type="text" role="combobox" aria-expanded="true" aria-controls="cmdkList" aria-autocomplete="list"
+          autocomplete="off" spellcheck="false" placeholder="Open an app, jump to a card, restart a service…">
+        <kbd>Esc</kbd>
+      </div>
+      <ul class="cmdk-list" id="cmdkList" role="listbox" aria-label="Results"></ul>
+      <div class="cmdk-foot" id="cmdkFoot" aria-live="polite"><span><kbd>↑</kbd><kbd>↓</kbd> move</span><span><kbd>Enter</kbd> run</span><span><kbd>Esc</kbd> close</span></div>
+    </div>
   </div>
 
   <div class="tooltip glass" id="tip" role="status" hidden></div>
@@ -325,6 +372,8 @@
         plex: {{ url_for('api_plex')|tojson }},
         speedtest: {{ url_for('api_speedtest')|tojson }},
         prefs: {{ url_for('api_prefs')|tojson }},
+        uptime: {{ url_for('api_uptime')|tojson }},
+        media: {{ url_for('api_media')|tojson }},
         status: {{ url_for('app_status')|tojson }},
         service: {{ url_for('service')|tojson }},
         quota: {{ url_for('quota_free')|tojson }}

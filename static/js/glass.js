@@ -200,6 +200,7 @@
 
   /* ------------------------------------------------------------ living sky */
   const SKY = window.SWZ_SKY;
+  let savePrefs = () => {};
   if (SKY) {
     SKY.init({ canvas: $("sky"), fps: 24, interactive: true, speed: .6, max: 200 });
     const SRC = { device: "this device's location", server: "the server's location", timezone: "your time zone (no location yet)" };
@@ -224,14 +225,14 @@
     }
     // remember the choice on the server too, so every browser you sign in from looks the same
     let prefTimer = 0;
-    function savePrefs() {
+    savePrefs = function () {
       clearTimeout(prefTimer);
       prefTimer = setTimeout(() => {
         fetch(S.api.prefs, { method: "POST", credentials: "same-origin",
           headers: { "Content-Type": "application/json", "X-Requested-With": "XMLHttpRequest" },
           body: JSON.stringify({ sky: SKY.mode(), skytheme: SKY.theme() }) }).catch(() => {});
       }, 400);
-    }
+    };
     const paintThemes = (st) => {
       if (!tbox) return;
       tbox.classList.toggle("dim", st.mode !== "auto");
@@ -898,6 +899,29 @@
     if (sec < 86400) return Math.floor(sec / 3600) + " h ago";
     return Math.floor(sec / 86400) + " d ago";
   }
+  const REGION = (() => { try { return new Intl.DisplayNames(undefined, { type: "region" }); } catch (_) { return null; } })();
+  const countryName = (cc) => { try { return (REGION && REGION.of(cc.toUpperCase())) || cc.toUpperCase(); } catch (_) { return cc.toUpperCase(); } };
+  let banLookupTimer = 0;
+  function renderBanCountries(c) {
+    const wrap = $("f2bCcWrap");
+    if (!c || (!c.top.length && !c.unknown)) { wrap.hidden = true; return; }
+    wrap.hidden = false;
+    $("f2bCcTitle").textContent = c.window === "7d" ? "Bans by country · 7 days" : "Recent bans by country";
+    const max = Math.max(1, ...c.top.map((r) => r.bans));
+    const rows = c.top.slice(0, 6).map((r) => `<div class="ccrow" title="${esc(countryName(r.cc))}: ${r.bans} bans from ${r.ips} address${r.ips === 1 ? "" : "es"}">
+        <span class="ccname">${flagHTML(r.cc, countryName(r.cc))}${esc(countryName(r.cc))}</span>
+        <span class="ccbar"><i style="width:${Math.max(3, (r.bans / max) * 100).toFixed(1)}%"></i></span>
+        <b>${r.bans}</b></div>`).join("");
+    const rest = c.top.slice(6).reduce((a, r) => a + r.bans, 0) + c.other;
+    $("f2bCountries").innerHTML = rows || `<div class="empty">Looking up countries…</div>`;
+    const notes = [];
+    if (rest) notes.push(`${rest} more elsewhere`);
+    if (c.unknown) notes.push(c.lookups ? `${c.unknown} being looked up` : `${c.unknown} unknown (lookups off)`);
+    $("f2bCcNote").textContent = notes.join(" · ");
+    // lookups run in the background a batch at a time: check back soon while some are pending
+    clearTimeout(banLookupTimer);
+    if (c.unknown && c.lookups) banLookupTimer = setTimeout(loadF2b, 15000);
+  }
   async function loadF2b() {
     const d = await getJSON(S.api.fail2ban), st = $("f2bState");
     if (!d.available) {
@@ -914,10 +938,11 @@
     $("f2bStats").innerHTML = [["Banned now", d.banned_now ?? 0], ["Bans 24 h", d.bans_24h], ["Bans 7 d", d.bans_7d], ["Failing now", failed]]
       .map(([k, v]) => `<div class="metric"><small>${k}</small><b>${v}</b></div>`).join("");
     $("f2bJails").textContent = d.jails.map((j) => `${j.name} ${j.currently_banned}`).join(" · ");
+    renderBanCountries(d.countries);
     $("f2bList").innerHTML = d.recent.length ? d.recent.slice(0, 25).map((b) => {
       const left = b.active && b.bantime > 0 ? b.time + b.bantime - nowS : null;
       const status = b.active ? (b.bantime < 0 ? "Banned forever" : left > 0 ? `Banned · ${dur(left)} left` : "Banned") : "Expired";
-      return `<div class="ban"><code title="${esc(b.ip)}">${esc(b.ip)}</code>
+      return `<div class="ban"><code title="${esc(b.ip)}${b.cc ? " · " + esc(countryName(b.cc)) : ""}">${b.cc ? flagHTML(b.cc, countryName(b.cc)) : ""}${esc(b.ip)}</code>
         <span class="when" title="${new Date(b.time * 1000).toLocaleString()}">${ago(nowS - b.time)}</span>
         <span class="meta"><span class="jail">${esc(b.jail)}</span>${b.failures ? b.failures + " failures" : ""}${b.count > 1 ? ` · ban #${b.count}` : ""}</span>
         <span class="st ${b.active ? "on" : "off"}">${status}</span></div>`;
@@ -961,6 +986,7 @@
       </div>`).join("");
     renderBars(t.days);
     renderHours(t.hours);
+    renderMonth(t);
     renderWeekTable(t.days, t.last7);
   }
 
@@ -997,6 +1023,22 @@
     renderBarChart($("hourBars"), hours, (d, i) => (i === hours.length - 1 ? "Now" : HOUR.format(new Date(d.time))), (i) => i === hours.length - 1, 3);
   }
 
+  const MON = new Intl.DateTimeFormat(undefined, { month: "short" });
+  const MONLONG = new Intl.DateTimeFormat(undefined, { month: "long", year: "numeric" });
+  function renderMonth(t) {
+    const md = t.month_days || [], ms = t.months || [];
+    if (md.length) renderBarChart($("monthBars"), md, (d) => String(+d.date.slice(8)), (i) => i === md.length - 1, md.length > 16 ? 3 : 1);
+    else $("monthBars").innerHTML = `<div class="empty">No daily data for this month yet</div>`;
+    if (ms.length) renderBarChart($("yearBars"), ms, (m) => MON.format(new Date(+m.month.slice(0, 4), +m.month.slice(5) - 1, 1)), (i) => i === ms.length - 1, 1);
+    else $("yearBars").innerHTML = `<div class="empty">No monthly data yet</div>`;
+    const best = md.reduce((a, d) => (!a || d.tx + d.rx > a.tx + a.rx ? d : a), null), p = t.month_projection;
+    $("monthFoot").innerHTML = [
+      `<span>${esc(MONLONG.format(new Date()))}: <b>▲ ${bytes(t.month.tx, 2)}</b> · ▼ ${bytes(t.month.rx, 2)}</span>`,
+      best && best.tx + best.rx > 0 ? `<span>Busiest day: <b>${esc(DATE.format(parseDay(best.date)))}</b> · ${bytes(best.tx + best.rx, 2)}</span>` : "",
+      p ? `<span title="Straight-line estimate from the days so far">On pace for <b>▲ ${bytes(p.tx, 1)}</b> · ▼ ${bytes(p.rx, 1)} this month</span>` : "",
+    ].filter(Boolean).join("");
+  }
+
   function renderWeekTable(days, sum) {
     const row = (name, d) => `<tr><td>${name}</td><td>${bytes(d.tx, 2)}</td><td>${bytes(d.rx, 2)}</td><td>${bytes(d.tx + d.rx, 2)}</td><td>${ratio(d)}</td></tr>`;
     $("weekTable").innerHTML = `<table><thead><tr><th>Day</th><th>Upload</th><th>Download</th><th>Total</th><th>Ratio</th></tr></thead>
@@ -1023,11 +1065,25 @@
         <div class="t-row"><span>Ratio</span><b>${ratio(d)}</b></div>`, e.clientX, e.clientY);
     });
     $("bars").addEventListener("pointerleave", hideTip);
+    const monthTip = (el, list, title) => {
+      el.addEventListener("pointermove", (e) => {
+        const col = e.target.closest(".col"); if (!col || !traffic) return hideTip();
+        const d = list()[+col.dataset.i]; if (!d) return hideTip();
+        showTip(`<div class="t-title">${esc(title(d))}</div>
+          <div class="t-row"><span><i class="dot s2"></i>Upload</span><b>${bytes(d.tx, 2)}</b></div>
+          <div class="t-row"><span><i class="dot s1"></i>Download</span><b>${bytes(d.rx, 2)}</b></div>
+          <div class="t-row"><span>Ratio</span><b>${ratio(d)}</b></div>`, e.clientX, e.clientY);
+      });
+      el.addEventListener("pointerleave", hideTip);
+    };
+    monthTip($("monthBars"), () => traffic.month_days || [], (d) => DATE.format(parseDay(d.date)) + (d.known === false ? " · not recorded" : ""));
+    monthTip($("yearBars"), () => traffic.months || [], (m) => MONLONG.format(new Date(+m.month.slice(0, 4), +m.month.slice(5) - 1, 1)));
     document.querySelectorAll("#trafficCard .seg button").forEach((b) => b.addEventListener("click", () => {
       document.querySelectorAll("#trafficCard .seg button").forEach((x) => x.setAttribute("aria-selected", String(x === b)));
       const v = b.dataset.view;
       $("bars").hidden = v !== "chart"; $("hourBars").hidden = v !== "hours"; $("weekTable").hidden = v !== "table";
-      $("weekTitle").textContent = v === "hours" ? "Last 24 hours" : "Last 7 days";
+      $("monthBars").hidden = v !== "month"; $("yearBars").hidden = v !== "year"; $("monthFoot").hidden = v !== "month" && v !== "year";
+      $("weekTitle").textContent = { hours: "Last 24 hours", month: "This month, day by day", year: "Last 12 months" }[v] || "Last 7 days";
     }));
 
   }
@@ -1243,6 +1299,100 @@
   });
   $("svcSearch").addEventListener("input", renderApps);
 
+  /* ============================================================ command palette (Ctrl+K)
+     Everything the page can do, by typing: open an app, jump to a card, start / stop / restart a
+     service, switch theme, run the speed test, copy the IP. Stopping or restarting asks for a
+     second Enter, so a slip of the keyboard never takes Plex down mid-stream. */
+  const cmdk = { el: $("cmdk"), input: $("cmdkInput"), list: $("cmdkList"), foot: $("cmdkFoot"), items: [], shown: [], sel: 0, arm: null, back: null };
+  if (/Mac|iPhone|iPad/.test(navigator.platform || "")) $("cmdKbd").textContent = "⌘K";
+  function cmdItems() {
+    const out = [];
+    const add = (group, label, run, extra) => out.push(Object.assign({ group, label, run, keys: label.toLowerCase() }, extra || {}));
+    apps.filter((a) => a.url).forEach((a) => add("Apps", `Open ${a.pretty_name}`, () => window.open(a.url, "_blank", "noopener"), { hint: a.url }));
+    apps.filter((a) => a.systemd && statusMap[a.name]).forEach((a) => {
+      const st = statusMap[a.name], doIt = (fn, done) => async () => {
+        try { await service(a.name, fn); toast(`${done} ${a.pretty_name}`); } catch (err) { toast(`${a.pretty_name}: ${err.message}`); }
+        setTimeout(loadStatus, 1500);
+      };
+      add("Services", `Restart ${a.pretty_name}`, doIt("restart", "Restarted"), { confirm: true, hint: st.active ? "running" : "stopped" });
+      if (st.active) add("Services", `Stop ${a.pretty_name}`, doIt("disable", "Stopped and disabled"), { confirm: true, hint: "stops and disables at boot" });
+      else add("Services", `Start ${a.pretty_name}`, doIt("enable", "Started and enabled"), { hint: "starts and enables at boot" });
+    });
+    document.querySelectorAll("main section.card:not([hidden]) h2").forEach((h) => {
+      const sec = h.closest("section"), name = (h.childNodes[0] && h.childNodes[0].textContent || h.textContent).trim();
+      if (name) add("Go to", name, () => { sec.scrollIntoView({ behavior: "smooth", block: "start" }); sec.classList.remove("flash"); void sec.offsetWidth; sec.classList.add("flash"); });
+    });
+    if (S.admin) {
+      add("Server", "Show server specifications", () => document.querySelector('[data-pop="popSpecs"]').click());
+      add("Server", "Run speed test", () => { document.querySelector('[data-pop="popSpecs"]').click(); setTimeout(() => { const b = $("speedRun"); if (b && !b.disabled) runSpeed(b); }, 400); }, { hint: "M-Lab, about 20 s" });
+      add("Server", "Copy IPv4 address", () => { const b = document.querySelector('[data-copy="ip4"]'); if (b && !b.hidden) b.click(); });
+    }
+    [["auto", "Auto (follows the sun)"], ["day", "Light"], ["night", "Dark"]].forEach(([m, n]) => add("Theme", `Theme: ${n}`, () => { SKY.setMode(m); savePrefs(); }));
+    if (SKY.themes) SKY.themes().forEach((t) => add("Theme", `Sky theme: ${t.name}`, () => { SKY.setTheme(t.key); SKY.setMode("auto"); savePrefs(); }, { hint: t.note }));
+    return out;
+  }
+  function score(q, it) {
+    if (!q) return 1;
+    const k = it.keys, words = q.split(/\s+/).filter(Boolean);
+    let total = 0;
+    for (const w of words) {
+      const i = k.indexOf(w);
+      if (i >= 0) { total += 10 + (i === 0 || k[i - 1] === " " ? 6 : 0) - i * 0.01; continue; }
+      let j = 0, gaps = 0, last = -1;                       // subsequence fallback ("rsplx" -> "restart plex")
+      for (const ch of w) { const f = k.indexOf(ch, j); if (f < 0) return 0; if (last >= 0 && f > last + 1) gaps++; last = f; j = f + 1; }
+      total += Math.max(1, 6 - gaps);
+    }
+    return total + (it.group === "Apps" ? 0.5 : 0);
+  }
+  function cmdRender() {
+    const q = cmdk.input.value.trim().toLowerCase();
+    cmdk.shown = cmdk.items.map((it) => [score(q, it), it]).filter(([sc]) => sc > 0)
+      .sort((a, b) => (q ? b[0] - a[0] : 0)).map(([, it]) => it).slice(0, 60);
+    cmdk.sel = Math.min(cmdk.sel, Math.max(0, cmdk.shown.length - 1));
+    let last = "";
+    cmdk.list.innerHTML = cmdk.shown.length ? cmdk.shown.map((it, i) => {
+      const head = !q && it.group !== last ? `<li class="cmdk-group" role="presentation">${esc(it.group)}</li>` : "";
+      last = it.group;
+      const armed = cmdk.arm === it;
+      return `${head}<li role="option" id="cmdk-${i}" data-i="${i}" aria-selected="${i === cmdk.sel}" class="${armed ? "armed" : ""}">
+        <span class="cmdk-label">${esc(armed ? `Press Enter again to ${it.label[0].toLowerCase() + it.label.slice(1)}` : it.label)}</span>
+        <span class="cmdk-hint">${esc(q && !armed ? it.group : it.hint || "")}</span></li>`;
+    }).join("") : `<li class="cmdk-empty" role="presentation">Nothing matches “${esc(cmdk.input.value)}”</li>`;
+    cmdk.input.setAttribute("aria-activedescendant", cmdk.shown.length ? `cmdk-${cmdk.sel}` : "");
+    const cur = $("cmdk-" + cmdk.sel); if (cur) cur.scrollIntoView({ block: "nearest" });
+  }
+  function cmdOpen() {
+    if (!cmdk.el.hidden) return;
+    cmdk.back = document.activeElement;
+    cmdk.items = cmdItems(); cmdk.sel = 0; cmdk.arm = null; cmdk.input.value = "";
+    cmdk.el.hidden = false; cmdRender(); cmdk.input.focus();
+  }
+  function cmdClose() {
+    if (cmdk.el.hidden) return;
+    cmdk.el.hidden = true; cmdk.arm = null;
+    if (cmdk.back && cmdk.back.focus) cmdk.back.focus();
+  }
+  function cmdRun(i) {
+    const it = cmdk.shown[i]; if (!it) return;
+    if (it.confirm && cmdk.arm !== it) { cmdk.arm = it; cmdk.sel = i; cmdRender(); cmdk.foot.dataset.msg = "confirm"; return; }
+    cmdClose(); it.run();
+  }
+  document.addEventListener("keydown", (e) => {
+    if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === "k") { e.preventDefault(); cmdk.el.hidden ? cmdOpen() : cmdClose(); return; }
+    if (cmdk.el.hidden) return;
+    if (e.key === "Escape") { e.preventDefault(); cmdClose(); }
+    else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault(); const n = cmdk.shown.length; if (!n) return;
+      cmdk.sel = (cmdk.sel + (e.key === "ArrowDown" ? 1 : n - 1)) % n; cmdk.arm = null; cmdRender();
+    } else if (e.key === "Enter") { e.preventDefault(); cmdRun(cmdk.sel); }
+    else if (e.key === "Tab") { e.preventDefault(); cmdk.input.focus(); }
+  });
+  cmdk.input.addEventListener("input", () => { cmdk.sel = 0; cmdk.arm = null; cmdRender(); });
+  cmdk.list.addEventListener("click", (e) => { const li = e.target.closest("[data-i]"); if (li) cmdRun(+li.dataset.i); });
+  cmdk.list.addEventListener("mousemove", (e) => { const li = e.target.closest("[data-i]"); if (li && +li.dataset.i !== cmdk.sel && !cmdk.arm) { cmdk.sel = +li.dataset.i; cmdRender(); } });
+  cmdk.el.addEventListener("mousedown", (e) => { if (e.target === cmdk.el) cmdClose(); });
+  $("cmdOpen").addEventListener("click", cmdOpen);
+
   /* ============================================================ quota */
   async function loadQuota() {
     try {
@@ -1250,6 +1400,93 @@
       $("quota").innerHTML = barRow("Home", [{ v: p, c: l === "good" ? css("--s1") : levelColor(l) }], `${d.diskused} / ${d.disktotal}`);
       $("quotaLine").textContent = `${d.diskfree} free`;
     } catch (_) { /* quota not installed */ }
+  }
+
+  /* ============================================================ media queue (Sonarr / Radarr) */
+  const APPNAME = { sonarr: "Sonarr", radarr: "Radarr" };
+  const WEEKDAY = new Intl.DateTimeFormat(undefined, { weekday: "long" });
+  const HM = new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" });
+  function dayLabel(d) {
+    const a = new Date(); a.setHours(0, 0, 0, 0);
+    const b = new Date(d); b.setHours(0, 0, 0, 0);
+    const n = Math.round((b - a) / 86400000);
+    return n <= 0 ? "Today" : n === 1 ? "Tomorrow" : WEEKDAY.format(d);
+  }
+  function etaText(q) {
+    if (!q.eta) return "";
+    const s = (new Date(q.eta) - Date.now()) / 1000;
+    return s > 0 ? `${dur(s)} left` : "";
+  }
+  async function loadMedia() {
+    const d = await getJSON(S.api.media), card = $("mediaCard");
+    if (!d.available) { card.hidden = true; return; }
+    card.hidden = false;
+    const bad = d.apps.filter((a) => !a.ok);
+    $("mediaNote").textContent = d.apps.map((a) => APPNAME[a.name] || a.name).join(" and ") +
+      (bad.length ? ` · ${bad.map((a) => `${APPNAME[a.name]} ${a.error}`).join(", ")}` : " · updates every minute");
+    $("mediaLinks").innerHTML = d.apps.map((a) => {
+      const p = (S.pages || []).find((x) => x.name === a.name);
+      return p && p.url ? `<a class="pill pop-mini" href="${esc(p.url)}" target="_blank" rel="noopener">${esc(APPNAME[a.name])}</a>` : "";
+    }).join("");
+    $("mqCount").textContent = d.queue.length ? String(d.queue.length) : "";
+    $("mediaQueue").innerHTML = d.queue.length ? d.queue.slice(0, 8).map((q) => `
+      <div class="mq-row${q.warn ? " warn" : ""}" title="${esc(q.client ? "Download client: " + q.client : "")}">
+        <div class="mq-top"><span class="mq-title">${esc(q.title)}${q.sub ? ` <small>${esc(q.sub)}</small>` : ""}</span>
+          <span class="mq-pct">${q.pct == null ? esc(q.state || "queued") : q.pct.toFixed(0) + "%"}</span></div>
+        <div class="mq-bar"><i style="width:${q.pct == null ? 0 : Math.max(1, q.pct)}%"></i></div>
+        <div class="mq-meta"><span>${esc(APPNAME[q.app])}${q.state && q.pct != null ? " · " + esc(q.state) : ""}${q.warn ? " · needs attention" : ""}</span>
+          <span>${q.left > 0 ? esc(bytes(q.left, 1)) + " to go" : ""}${etaText(q) ? " · " + esc(etaText(q)) : ""}</span></div>
+      </div>`).join("") : `<div class="empty">Nothing downloading</div>`;
+    $("mcTitle").textContent = `Coming up · next ${d.days} days`;
+    $("mcCount").textContent = d.upcoming.length ? String(d.upcoming.length) : "";
+    let last = "";
+    $("mediaCal").innerHTML = d.upcoming.length ? d.upcoming.slice(0, 12).map((u) => {
+      const t = new Date(u.when), lab = dayLabel(t), head = lab !== last ? `<div class="mc-day">${esc(lab)}</div>` : "";
+      last = lab;
+      return `${head}<div class="mc-row"><span class="mc-time">${u.app === "sonarr" ? esc(HM.format(t)) : ""}</span>
+        <span class="mc-title">${esc(u.title)}${u.sub ? ` <small>${esc(u.sub)}</small>` : ""}</span>
+        <span class="mc-st ${u.has_file ? "got" : ""}">${u.has_file ? "Downloaded" : esc(APPNAME[u.app])}</span></div>`;
+    }).join("") : `<div class="empty">Nothing scheduled this week</div>`;
+  }
+
+  /* ============================================================ app uptime (24 h) */
+  let uptimeData = null;
+  const HR = new Intl.DateTimeFormat(undefined, { weekday: "short", hour: "numeric" });
+  const prettyApp = (n) => ((S.pages || []).find((p) => p.name === n) || {}).pretty_name || n;
+  function cellClass(c) {
+    if (!c || !c.expected) return "off";
+    const r = c.up / c.expected;
+    return r >= 0.999 ? "ok" : r >= 0.5 ? "part" : "down";
+  }
+  async function loadUptime() {
+    const d = await getJSON(S.api.uptime);
+    uptimeData = d;
+    const card = $("uptimeCard");
+    if (!d.apps || !d.apps.length) { card.hidden = true; return; }
+    card.hidden = false;
+    const sampled = d.panel_samples.reduce((a, b) => a + b, 0);
+    $("uptimeNote").textContent = sampled < 60 ? "Collecting — the strips fill in over the next 24 hours" : "Last 24 hours · checked every minute";
+    $("uptimeGrid").innerHTML = d.apps.map((a, ai) => {
+      const pct = a.pct == null ? "–" : a.pct >= 99.995 ? "100%" : a.pct.toFixed(a.pct >= 99 ? 2 : 1) + "%";
+      const nowCls = a.now === "up" ? "on" : a.now === "down" ? "off" : "";
+      return `<div class="up-row" data-a="${ai}">
+        <span class="up-name"><i class="side-dot ${nowCls}" aria-hidden="true"></i>${esc(prettyApp(a.name))}</span>
+        <span class="up-strip" role="img" aria-label="${esc(prettyApp(a.name))}: ${esc(pct)} up in the last 24 hours">${a.hours.map((c, i) =>
+          `<i class="uc ${cellClass(c)}" data-h="${i}"></i>`).join("")}</span>
+        <b class="up-pct${a.pct != null && a.pct < 99 ? " warn" : ""}">${pct}</b></div>`;
+    }).join("");
+  }
+  if (S.admin && $("uptimeGrid")) {
+    $("uptimeGrid").addEventListener("pointermove", (e) => {
+      const cell = e.target.closest(".uc"), row = e.target.closest(".up-row");
+      if (!cell || !row || !uptimeData) return hideTip();
+      const a = uptimeData.apps[+row.dataset.a], i = +cell.dataset.h, c = a.hours[i];
+      const t0 = new Date((uptimeData.start + i * 3600) * 1000), t1 = new Date(t0.getTime() + 3600000);
+      const what = !c ? "No data (panel wasn't running)" : !c.expected ? "Stopped and disabled on purpose"
+        : `Running ${c.up} of ${c.expected} minutes checked`;
+      showTip(`<div class="t-title">${esc(prettyApp(a.name))} · ${HR.format(t0)} – ${HOUR.format(t1)}</div><div class="t-row"><span>${esc(what)}</span></div>`, e.clientX, e.clientY);
+    });
+    $("uptimeGrid").addEventListener("pointerleave", hideTip);
   }
 
   /* ============================================================ loops */
@@ -1271,6 +1508,8 @@
     if (store.get("wxMode", "server") === "device") setTimeout(() => deviceWeather(false), 400);
     every(600000, () => store.get("wxMode", "server") === "device" ? deviceWeather(false) : null);
     every(60000, loadF2b);
+    every(60000, loadUptime);
+    every(60000, loadMedia);
     loadPlex.recheck = true;
     every(5000, loadPlex);
     setInterval(tickClock, 1000);

@@ -88,6 +88,8 @@ def _run(cfg):
             p.wait(timeout=5)
         except Exception:
             p.kill()
+        finally:
+            p.stdout.close()
     except Exception as e:  # noqa: BLE001
         error = "Couldn't run the speed test: {}".format(e)
     if final:

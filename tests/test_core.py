@@ -7,6 +7,7 @@ import json
 import os
 import sys
 import tempfile
+import time
 import unittest
 from unittest import mock
 
@@ -561,6 +562,174 @@ class CoreTemps(unittest.TestCase):
         tt = hw._thread_temps(8, by_core)                          # cpu6/cpu7 don't exist here
         self.assertIsNone(tt[6])
         self.assertIsNone(tt[7])
+
+
+# ----------------------------------------------------------------------------- bans by country
+class IpCountry(unittest.TestCase):
+    def setUp(self):
+        import core.ipcountry as ic
+        self.ic = ic
+        self.d = tempfile.mkdtemp()
+        self.cfg = {"IPCOUNTRY_FILE": os.path.join(self.d, "c.json")}
+        ic._state.update(cache=None, running=False, pending=set(), dirty=False, blocked_until=0)
+
+    def run_sync(self):
+        """Run the background worker inline so the test is deterministic."""
+        with mock.patch.object(self.ic.threading, "Thread") as T, mock.patch.object(self.ic.time, "sleep"):
+            out = self.ic.countries(self.ips, self.cfg)
+            if T.called:
+                self.ic._worker(self.cfg)
+        return out
+
+    def test_private_addresses_never_leave(self):
+        for ip in ("10.0.0.1", "192.168.1.9", "127.0.0.1", "::1", "fe80::1", "not-an-ip", "0.0.0.0"):
+            self.assertIsNone(self.ic.public_ip(ip))
+        self.assertEqual(self.ic.public_ip(" 8.8.8.8 "), "8.8.8.8")
+
+    def test_lookup_cache_and_summary(self):
+        self.ips = ["1.1.1.1", "8.8.8.8", "10.0.0.1"]
+        calls = []
+        def fake(ip, session=None):
+            calls.append(ip)
+            return {"1.1.1.1": "AU", "8.8.8.8": "US"}[ip], None
+        with mock.patch.object(self.ic, "lookup_one", side_effect=fake):
+            self.assertEqual(self.run_sync(), {})                       # first call only queues
+            self.assertEqual(sorted(calls), ["1.1.1.1", "8.8.8.8"])     # private one never looked up
+            got = self.run_sync()
+        self.assertEqual(got, {"1.1.1.1": "AU", "8.8.8.8": "US"})
+        self.assertEqual(len(calls), 2)                                 # cached: no second lookup
+        self.ic._state["cache"] = None                                  # survives a restart (file)
+        with mock.patch.object(self.ic, "lookup_one", side_effect=AssertionError("should be cached")):
+            self.assertEqual(self.run_sync(), {"1.1.1.1": "AU", "8.8.8.8": "US"})
+        top, other, unknown = self.ic.summarize([("1.1.1.1", 5), ("8.8.8.8", 9), ("9.9.9.9", 2)], got)
+        self.assertEqual([r["cc"] for r in top], ["US", "AU"])
+        self.assertEqual((top[0]["bans"], other, unknown), (9, 0, 2))
+
+    def test_rate_limit_backs_off(self):
+        self.ips = ["1.1.1.1", "8.8.8.8"]
+        with mock.patch.object(self.ic, "lookup_one", return_value=(None, 120)) as L:
+            self.run_sync()
+            self.assertEqual(L.call_count, 1)                           # stops at the first 429
+            self.run_sync()
+            self.assertEqual(L.call_count, 1)                           # and waits out Retry-After
+        self.assertGreater(self.ic._state["blocked_until"], time.time() + 100)
+
+    def test_lookups_off(self):
+        self.ips = ["1.1.1.1"]
+        self.cfg["PLACE_LOOKUPS"] = False
+        with mock.patch.object(self.ic, "lookup_one", side_effect=AssertionError("lookups are off")):
+            self.assertEqual(self.run_sync(), {})
+
+    def test_bad_answers_are_ignored(self):
+        r = mock.Mock(status_code=200, headers={}, json=lambda: {"country": "<script>"})
+        r.raise_for_status = lambda: None
+        self.assertEqual(self.ic.lookup_one("1.1.1.1", session=mock.Mock(get=lambda *a, **k: r)), (None, None))
+
+
+# ----------------------------------------------------------------------------- app uptime
+class Uptime(unittest.TestCase):
+    def setUp(self):
+        import core.uptime as up
+        self.up = up
+        self.d = tempfile.mkdtemp()
+        self.cfg = {"UPTIME_FILE": os.path.join(self.d, "u.json")}
+        up._state.update(data=None, saved=0.0)
+
+    def test_up_down_off_and_gaps(self):
+        t0 = 1_800_000_000 // 3600 * 3600          # start of an hour
+        for m in range(60):                       # hour 1: plex down for 15 minutes, sonarr off on purpose
+            self.up.record([{"name": "plex", "active": m >= 15, "enabled": True},
+                            {"name": "sonarr", "active": False, "enabled": False}], self.cfg, now=t0 + m * 60)
+        # hour 2: panel not running (no samples); hour 3: all fine
+        for m in range(60):
+            self.up.record([{"name": "plex", "active": True, "enabled": True}], self.cfg, now=t0 + 7200 + m * 60)
+        r = self.up.report(self.cfg, ["plex", "sonarr", "radarr"], now=t0 + 7200 + 3599)
+        plex = r["apps"][0]
+        self.assertEqual(plex["hours"][-3], {"up": 45, "expected": 60, "off": 0})
+        self.assertIsNone(plex["hours"][-2])                     # gap is "no data", not downtime
+        self.assertEqual(plex["hours"][-1]["up"], 60)
+        self.assertEqual(plex["pct"], round(100 * 105 / 120, 2))
+        sonarr = r["apps"][1]
+        self.assertEqual(sonarr["hours"][-3], {"up": 0, "expected": 0, "off": 60})
+        self.assertIsNone(sonarr["pct"])                         # off on purpose: no uptime figure
+        self.assertEqual(r["apps"][2]["name"], "radarr")          # installed but never sampled yet
+        self.assertEqual(r["apps"][2]["pct"], None)
+
+    def test_persists_and_prunes(self):
+        t0 = 1_800_000_000
+        self.up.record([{"name": "plex", "active": True, "enabled": True}], self.cfg, now=t0)
+        self.up.save(self.cfg)
+        self.up._state["data"] = None
+        self.up.record([{"name": "plex", "active": True, "enabled": True}], self.cfg, now=t0 + 60 * 3600)
+        hours = [k for k in self.up._state["data"]["apps"]["plex"] if not k.startswith("_")]
+        self.assertEqual(len(hours), 1)                          # the 60-hour-old bucket was pruned
+
+    def test_damaged_file(self):
+        with open(self.cfg["UPTIME_FILE"], "w") as f:
+            f.write("{nope")
+        self.assertEqual(self.up.report(self.cfg)["apps"], [])
+
+
+# ----------------------------------------------------------------------------- media queue (fake Sonarr/Radarr)
+class MediaQueue(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        import socket
+        import subprocess
+        here = os.path.dirname(os.path.abspath(__file__))
+        with socket.socket() as s:
+            s.bind(("127.0.0.1", 0))
+            cls.port = s.getsockname()[1]
+        cls.srv = subprocess.Popen([sys.executable, os.path.join(here, "tools", "fake_arr.py"), str(cls.port)],
+                                   stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, universal_newlines=True)
+        cls.srv.stdout.readline()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.srv.kill()
+        cls.srv.wait()
+        cls.srv.stdout.close()
+
+    def setUp(self):
+        import core.arr as arr
+        self.arr = arr
+        arr._cache.update(t=0, data=None)
+        self.d = tempfile.mkdtemp()
+        self.cfg = {"ARR_FILE": os.path.join(self.d, "arr.json")}
+
+    def write(self, conf):
+        with open(self.cfg["ARR_FILE"], "w") as f:
+            json.dump(conf, f)
+
+    def test_queue_and_upcoming(self):
+        base = "http://127.0.0.1:{}".format(self.port)
+        self.write({"sonarr": {"url": base + "/sonarr", "key": "s" * 32}, "radarr": {"url": base + "/radarr", "key": "r" * 32}})
+        d = self.arr.media(self.cfg)
+        self.assertTrue(d["available"])
+        self.assertTrue(all(a["ok"] for a in d["apps"]))
+        q = {x["title"]: x for x in d["queue"]}
+        self.assertEqual(q["The <b>Show</b>"]["sub"], "S03E06 · Pilot Light")   # raw text; the page escapes it
+        self.assertEqual(q["The <b>Show</b>"]["pct"], 65.0)
+        self.assertEqual(q["Film"]["pct"], 75.0)
+        self.assertTrue(q["Stuck Show"]["warn"])
+        self.assertIsNone(q["Stuck Show"]["pct"])
+        up = [u["title"] for u in d["upcoming"]]
+        self.assertEqual(up, ["The Show", "New Film (2026)"])                    # old film outside the week is dropped
+        self.assertEqual(d["upcoming"][1]["sub"], "Digital release")
+
+    def test_one_app_down_or_wrong_key(self):
+        base = "http://127.0.0.1:{}".format(self.port)
+        self.write({"sonarr": {"url": base + "/sonarr", "key": "x" * 32}, "radarr": {"url": base + "/broken", "key": "r" * 32}})
+        d = self.arr.media(self.cfg)
+        errs = {a["name"]: a.get("error") for a in d["apps"]}
+        self.assertEqual(errs, {"sonarr": "API key rejected", "radarr": "not answering"})
+        self.assertEqual(d["queue"], [])
+
+    def test_only_local_addresses_are_used(self):
+        self.write({"sonarr": {"url": "http://evil.example:80", "key": "s" * 32},
+                    "radarr": {"url": "http://127.0.0.1:7878/radarr", "key": "bad key!"}})
+        self.assertEqual(self.arr.media(self.cfg), {"available": False, "reason": "no-apps"})
+        self.assertEqual(self.arr.media({"ARR_FILE": os.path.join(self.d, "missing.json")})["reason"], "not-configured")
 
 
 if __name__ == "__main__":

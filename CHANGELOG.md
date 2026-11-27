@@ -3,6 +3,33 @@
 Fork of [liaralabs/swizzin_dashboard](https://github.com/liaralabs/swizzin_dashboard), tuned for
 seedbox servers. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [sheergood-11] — Nov 27 2026
+
+### Added
+- **Bans by country** (Security card): the last 7 days of fail2ban bans grouped by country with
+  flags, and a flag on every recent ban. Countries come from api.country.is (free, no key, HTTPS,
+  no request logging), looked up in the background a few at a time and cached for 30 days, so each
+  address is looked up once and the page never waits on it. Private addresses are never sent, and
+  nothing is looked up when `PLACE_LOOKUPS = False`.
+- **App uptime, last 24 hours**: a strip per installed app, one block per hour (running, partly
+  down, down, or stopped on purpose), with the uptime percentage and per-hour detail on hover. The
+  panel checks every minute and keeps 48 hours on disk, so restarts don't lose the history; time
+  the panel itself was down shows as "no data", never as downtime.
+- **Media queue** (when Sonarr or Radarr is installed): what's downloading (progress, size left,
+  time left, items needing attention) and what's coming in the next 7 days (episodes with air
+  times, films' digital / disc / cinema dates). One app being down never hides the other.
+- **This month / 12 months** on the Data transferred card: each day of the month (busiest day
+  called out), each of the last 12 months, and a straight-line "on pace for" month total.
+- **Command palette** (Ctrl+K / ⌘K, or the Search button): open any app, jump to any card, start /
+  stop / restart services, switch theme or sky theme, run the speed test, copy the IP. Stop and
+  restart ask for a second Enter. Fully keyboard driven and returns focus where it was.
+
+### Fixed
+- Python compatibility: replaced `datetime.utcfromtimestamp` / `utcnow`, which are deprecated and
+  due to be removed; the first runs when the panel starts, so a future Python would have stopped
+  the panel from starting.
+- The speed test no longer leaks a file handle per run.
+
 ## [sheergood-10] — Nov 27 2026
 
 ### Added
