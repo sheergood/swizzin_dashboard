@@ -1,4 +1,20 @@
 /* swizzin glass — liquid-glass dashboard theme (sheergood fork) */
+/* living sky (static/js/sky.js sets these from the sun's elevation every minute) */
+@property --sky-top { syntax: "<color>"; inherits: true; initial-value: #03040b; }
+@property --sky-mid { syntax: "<color>"; inherits: true; initial-value: #060917; }
+@property --sky-low { syntax: "<color>"; inherits: true; initial-value: #0a0c1b; }
+@property --glow-1 { syntax: "<color>"; inherits: true; initial-value: #25307a; }
+@property --glow-2 { syntax: "<color>"; inherits: true; initial-value: #4a2386; }
+@property --glow-3 { syntax: "<color>"; inherits: true; initial-value: #0b4250; }
+@property --glow-4 { syntax: "<color>"; inherits: true; initial-value: #2b1a45; }
+@property --glass-tint { syntax: "<number>"; inherits: true; initial-value: 0; }
+@property --stars { syntax: "<number>"; inherits: true; initial-value: 1; }
+html { transition: --sky-top 6s ease, --sky-mid 6s ease, --sky-low 6s ease, --glow-1 6s ease, --glow-2 6s ease, --glow-3 6s ease,
+  --glow-4 6s ease, --glass-tint 6s ease, --stars 6s ease; }
+html.sky-instant { transition: none !important; }
+/* brighter skies: lift secondary text so it keeps its contrast against the lighter glass */
+html[data-sky="twilight"] { --ink-2: #bcc4d8; --ink-3: #8f9bb8; }
+html[data-sky="day"] { --ink-2: #d2dbee; --ink-3: #aab9d6; --line: rgba(255, 255, 255, .12); }
 :root {
   color-scheme: dark;
   --bg: #07080d;
@@ -40,15 +56,15 @@ h2 { margin: 0; font-size: 15px; font-weight: 650; letter-spacing: .01em; }
 p { margin: 2px 0 0; font-size: 12.5px; }
 
 /* ---------------------------------------------------------------- ambient */
-.ambient { position: fixed; inset: 0; z-index: -1; overflow: hidden; background:
-  radial-gradient(1200px 800px at 80% -10%, #1a1f3a 0%, transparent 60%),
-  radial-gradient(900px 700px at -10% 110%, #10262c 0%, transparent 60%), var(--bg); }
+.ambient { position: fixed; inset: 0; z-index: -2; overflow: hidden;
+  background: linear-gradient(180deg, var(--sky-top) 0%, var(--sky-mid) 55%, var(--sky-low) 100%); }
+#sky { position: fixed; inset: 0; z-index: -1; width: 100%; height: 100%; display: block; pointer-events: none; }
 .blob { position: absolute; border-radius: 50%; filter: blur(70px); opacity: .55; mix-blend-mode: screen;
   animation: drift 28s ease-in-out infinite alternate; }
-.b1 { width: 46vmax; height: 46vmax; left: -8vmax; top: -12vmax; background: radial-gradient(circle at 35% 35%, #2f6df0, transparent 65%); }
-.b2 { width: 38vmax; height: 38vmax; right: -10vmax; top: 10vh; background: radial-gradient(circle at 50% 50%, #8a3cf0, transparent 65%); animation-duration: 34s; animation-delay: -8s; }
-.b3 { width: 40vmax; height: 40vmax; left: 25vw; bottom: -20vmax; background: radial-gradient(circle at 50% 50%, #00b3a0, transparent 65%); animation-duration: 40s; animation-delay: -16s; }
-.b4 { width: 26vmax; height: 26vmax; right: 18vw; bottom: 5vh; background: radial-gradient(circle at 50% 50%, #ff7a3d, transparent 65%); opacity: .35; animation-duration: 31s; animation-delay: -4s; }
+.b1 { width: 46vmax; height: 46vmax; left: -8vmax; top: -12vmax; background: radial-gradient(circle at 35% 35%, var(--glow-1), transparent 65%); }
+.b2 { width: 38vmax; height: 38vmax; right: -10vmax; top: 10vh; background: radial-gradient(circle at 50% 50%, var(--glow-2), transparent 65%); animation-duration: 34s; animation-delay: -8s; }
+.b3 { width: 40vmax; height: 40vmax; left: 25vw; bottom: -20vmax; background: radial-gradient(circle at 50% 50%, var(--glow-3), transparent 65%); animation-duration: 40s; animation-delay: -16s; }
+.b4 { width: 26vmax; height: 26vmax; right: 18vw; bottom: 5vh; background: radial-gradient(circle at 50% 50%, var(--glow-4), transparent 65%); opacity: .45; animation-duration: 31s; animation-delay: -4s; }
 @keyframes drift {
   0%   { transform: translate3d(0,0,0) scale(1); }
   50%  { transform: translate3d(6vw,4vh,0) scale(1.12); }
@@ -62,7 +78,8 @@ html[data-motion="off"] .blob { animation: none; }
 /* ---------------------------------------------------------------- glass */
 .glass {
   position: relative;
-  background: var(--glass-fill);
+  /* the tint layer darkens the glass as the sky brightens, so light text keeps its contrast by day */
+  background: linear-gradient(rgba(6, 10, 24, var(--glass-tint)), rgba(6, 10, 24, var(--glass-tint))), var(--glass-fill);
   -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(170%);
   backdrop-filter: blur(var(--glass-blur)) saturate(170%);
   border-radius: var(--radius);
@@ -159,6 +176,13 @@ html[data-side="mini"] .side-item, html[data-side="mini"] .side-toggle { justify
 .dropdown a { padding: 9px 12px; border-radius: 10px; text-decoration: none; }
 .dropdown a:hover { background: rgba(255,255,255,.08); }
 .dropdown hr { border: 0; border-top: 1px solid var(--line); margin: 6px 4px; width: auto; }
+.menu-sky { padding: 8px 12px 4px; display: flex; flex-direction: column; gap: 8px; }
+.menu-sky-head { display: flex; justify-content: space-between; gap: 10px; font-size: 13px; }
+.menu-sky-head .muted { font-size: 12px; }
+.sky-seg { display: flex; width: 100%; }
+.sky-seg button { flex: 1; padding: 5px 0; font-size: 12px; }
+.menu-sky-src { font-size: 11.5px; }
+.dropdown { min-width: 300px; }
 .row-toggle { display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; cursor: pointer; gap: 14px; }
 
 /* switch */
@@ -253,6 +277,10 @@ html[data-side="mini"] .side-item, html[data-side="mini"] .side-toggle { justify
 .ip-rows b.sans { font-family: var(--sans); font-size: 12.5px; }
 .wx-foot { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 14px; font-size: 12.5px; color: var(--ink-2); }
 .wx-foot b { color: var(--ink); font-weight: 600; }
+.moon-row { display: flex; align-items: center; gap: 10px; border-top: 1px solid var(--line); padding-top: 8px; }
+.moon-row .moon-ico { width: 40px; height: 40px; flex: none; display: grid; place-items: center; }
+.moon-row b { display: block; font-size: 13px; font-weight: 600; }
+.moon-row small { color: var(--ink-2); font-size: 11.5px; }
 @media (max-width: 640px) { .sb-sub { display: none; } .sb { flex-basis: 100%; } }
 
 /* compact memory & storage card */
@@ -360,23 +388,48 @@ html[data-side="mini"] .side-item, html[data-side="mini"] .side-toggle { justify
 .week-table tfoot td { font-weight: 650; border-top: 1px solid rgba(255,255,255,.18); }
 
 /* drives: compact rows + detail popover */
-.drives-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 520px), 1fr)); gap: 8px; }
-.drive-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto 40px auto; align-items: center; gap: 12px; width: 100%;
-  padding: 9px 12px; border-radius: 14px; background: rgba(255,255,255,.045); border: 1px solid var(--line); color: var(--ink); font: inherit;
-  text-align: left; cursor: pointer; transition: background .2s; }
+.drives-list { display: flex; flex-direction: column; gap: 6px; container-type: inline-size; }
+.disk-totals { display: flex; gap: 16px; font-size: 12.5px; color: var(--ink-2); flex-wrap: wrap; }
+.disk-totals span { display: inline-flex; align-items: center; gap: 6px; }
+.disk-totals b { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
+/* columns (DOM order): type | name | wear | IO% | read | write | temp | health */
+.drive-row { display: grid; grid-template-columns: 50px minmax(0, 1fr) 104px 124px 140px 140px 38px 122px;
+  align-items: center; gap: 14px; width: 100%; padding: 8px 12px; border-radius: 14px; background: rgba(255,255,255,.045);
+  border: 1px solid var(--line); color: var(--ink); font: inherit; text-align: left; cursor: pointer; transition: background .2s; }
 .drive-row:hover, .drive-row[aria-expanded="true"] { background: rgba(255,255,255,.09); }
-.drive-row .kind { margin: 0; }
+.drive-row .kind { margin: 0; justify-self: start; }
 .dr-name { min-width: 0; display: flex; flex-direction: column; }
 .dr-name b { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.dr-name small { color: var(--ink-2); font-family: var(--mono); font-size: 11px; }
-.dr-wear { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; white-space: nowrap; }
-.dr-wear .bar { width: 46px; height: 6px; }
+.dr-name small { color: var(--ink-2); font-family: var(--mono); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dr-busy { display: grid; grid-template-columns: auto minmax(0, 1fr) 36px; align-items: center; gap: 6px; font-size: 12px; min-width: 0; }
+.dr-busy small { color: var(--ink-3); font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em; font-weight: 600; }
+.dr-busy .bar { height: 6px; } .dr-busy .bar i { width: 1%; }
+.dr-busy b { text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; }
+.dr-io { display: grid; grid-template-columns: minmax(0, 1fr); gap: 3px; min-width: 0; }
+.dr-io-head { display: flex; align-items: center; gap: 6px; font-size: 12px; min-width: 0; }
+.dr-io-head b { font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dr-io .dot { width: 7px; height: 7px; flex: none; }
+.spark { display: block; height: 16px; min-width: 0; }
+.spark svg { width: 100%; height: 16px; display: block; }
+.dr-wear { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; white-space: nowrap; min-width: 0; }
+.dr-wear .bar { width: 36px; height: 6px; }
 .dr-wear small { color: var(--ink-2); font-size: 11px; }
 .dr-temp { font-size: 12.5px; text-align: right; font-variant-numeric: tabular-nums; }
-.dr-io { display: flex; flex-direction: column; font-size: 11px; color: var(--ink-2); white-space: nowrap; min-width: 82px; }
-.dr-io b { color: var(--ink); font-weight: 600; }
-.drive-row .badge { justify-self: end; }
-@media (max-width: 640px) { .drive-row { grid-template-columns: auto minmax(0, 1fr) auto; } .dr-temp, .dr-wear { display: none; } }
+.drive-row .badge { justify-self: end; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+/* sized by the card, not the screen (the sidebar takes part of the width) */
+@container (max-width: 1050px) {
+  .drive-row { grid-template-columns: 50px minmax(0, 1fr) 112px 124px 124px 38px 122px; }
+  .drive-row .dr-wear { display: none; }
+}
+@container (max-width: 820px) {
+  .drive-row { grid-template-columns: 50px minmax(0, 1fr) 100px 92px 92px 122px; gap: 10px; }
+  .drive-row .dr-temp, .drive-row .spark { display: none; }
+}
+@container (max-width: 560px) {
+  .drive-row { grid-template-columns: 50px minmax(0, 1fr) 122px; }
+  .drive-row .dr-busy, .drive-row .dr-io { display: none; }
+}
+@media (max-width: 640px) { .disk-totals { display: none; } }
 .pop-wide { width: min(560px, calc(100vw - 24px)); max-height: min(70vh, 640px); overflow: auto; }
 .pop .metrics { grid-template-columns: repeat(3, 1fr); }
 
@@ -504,11 +557,13 @@ a.app-name:hover { text-decoration: underline; text-underline-offset: 3px; }
   /* fewer composited layers: the masked rim and pointer sheen become a plain border, and the animated
      light blobs become a static version of the same gradient */
   .glass::before, .glass::after { content: none; }
-  .blob, .grain { display: none; }
+  .blob, .grain, #sky { display: none; }
   .ambient { background:
-      radial-gradient(40% 50% at 12% 8%, rgba(47, 109, 240, .34), transparent 70%),
-      radial-gradient(35% 45% at 92% 28%, rgba(138, 60, 240, .3), transparent 70%),
-      radial-gradient(40% 45% at 45% 100%, rgba(0, 179, 160, .22), transparent 70%),
-      radial-gradient(25% 30% at 78% 88%, rgba(255, 122, 61, .16), transparent 70%), var(--bg); }
+      radial-gradient(40% 50% at 12% 8%, color-mix(in srgb, var(--glow-1) 40%, transparent), transparent 70%),
+      radial-gradient(35% 45% at 92% 28%, color-mix(in srgb, var(--glow-2) 35%, transparent), transparent 70%),
+      radial-gradient(40% 45% at 45% 100%, color-mix(in srgb, var(--glow-3) 28%, transparent), transparent 70%),
+      linear-gradient(180deg, var(--sky-top), var(--sky-mid) 55%, var(--sky-low)); }
+  .glass { background: linear-gradient(rgba(6, 10, 24, var(--glass-tint)), rgba(6, 10, 24, var(--glass-tint))),
+      linear-gradient(135deg, rgba(58, 66, 98, .78) 0%, rgba(30, 35, 54, .82) 45%, rgba(40, 46, 70, .8) 100%); }
   .pop, .dropdown, .tooltip, .toast { background: rgba(22, 25, 38, .96); }
 }

@@ -147,5 +147,11 @@ function moonNow(lat) {
   const age = ((((Date.now() / 86400000 - ref) / SYN) % 1) + 1) % 1;
   return { age, illum: (1 - Math.cos(2 * Math.PI * age)) / 2, up: true, south: lat != null && lat < 0 };
 }
-window.SWZ_WX = { wxIcon, WX_CODES, WX_SHORT, moonNow };
+const MOON_NAMES = [[.0339, "New moon"], [.216, "Waxing crescent"], [.284, "First quarter"], [.466, "Waxing gibbous"],
+  [.534, "Full moon"], [.716, "Waning gibbous"], [.784, "Last quarter"], [.966, "Waning crescent"], [1.01, "New moon"]];
+function moonName(age) {   // same 3 % cutoff as the icon, which shows a dark "new moon" glow below it
+  if ((1 - Math.cos(2 * Math.PI * age)) / 2 < 0.03) return "New moon";
+  return MOON_NAMES.find(([lim]) => age < lim)[1];
+}
+window.SWZ_WX = { wxIcon, WX_CODES, WX_SHORT, moonNow, moonName };
 })();

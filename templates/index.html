@@ -15,6 +15,7 @@
     <span class="blob b1"></span><span class="blob b2"></span><span class="blob b3"></span><span class="blob b4"></span>
     <div class="grain"></div>
   </div>
+  <canvas id="sky" aria-hidden="true"></canvas>
 
   <!-- Liquid-glass displacement filter (Chromium applies it to backdrop-filter; others fall back to blur) -->
   <svg width="0" height="0" style="position:absolute" aria-hidden="true">
@@ -54,6 +55,18 @@
     <nav class="menu">
       <button class="pill" id="menuBtn" aria-haspopup="true" aria-expanded="false">{{ user }} <span class="caret">▾</span></button>
       <div class="dropdown glass" id="menu" hidden>
+        <div class="menu-sky">
+          <div class="menu-sky-head"><span>Sky</span><span class="muted" id="skyPhase"></span></div>
+          <div class="seg sky-seg" role="radiogroup" aria-label="Sky theme">
+            <button role="radio" data-sky="auto" title="Follows the real sun at this location">Auto</button>
+            <button role="radio" data-sky="dawn">Dawn</button>
+            <button role="radio" data-sky="day">Day</button>
+            <button role="radio" data-sky="dusk">Dusk</button>
+            <button role="radio" data-sky="night">Night</button>
+          </div>
+          <div class="muted menu-sky-src" id="skySrc"></div>
+        </div>
+        <hr>
         <label class="row-toggle"><span>Liquid refraction</span><input type="checkbox" id="optRefraction" checked><i></i></label>
         <label class="row-toggle"><span>Ambient motion</span><input type="checkbox" id="optMotion" checked><i></i></label>
         <hr>
@@ -104,6 +117,7 @@
       <div class="pop-head"><span class="label">Weather</span><span class="muted" id="wxPlace2"></span></div>
       <div class="wx-hero"><span class="wx-big" id="wxIconBig" aria-hidden="true"></span><div><b id="wxTempBig">–</b><span id="wxFeels">–</span></div></div>
       <div class="wx-foot" id="wxFoot"></div>
+      <div class="moon-row" id="wxMoon"></div>
       <p class="muted pop-note">📍 switches between the server's location and this device's.</p>
     </div>
 
@@ -189,6 +203,7 @@
     <section class="glass card" data-span="12">
       <div class="card-head">
         <div><h2>Drives</h2><p class="muted" id="smartNote">SMART health, wear and live I/O</p></div>
+        <div class="disk-totals" id="diskTotals"></div>
       </div>
       <div class="drives-list" id="drives"></div>
     </section>
@@ -260,6 +275,7 @@
       }
     };
   </script>
+  <script src="{{ url_for('static', filename='js/sky.js') }}"></script>
   <script src="{{ url_for('static', filename='js/wxicons.js') }}"></script>
   <script src="{{ url_for('static', filename='js/glass.js') }}"></script>
 </body>

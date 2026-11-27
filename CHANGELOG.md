@@ -15,6 +15,18 @@ seedbox servers. Format follows [Keep a Changelog](https://keepachangelog.com/en
   syntax, smoke test.
 
 ### Added
+- **Living sky theme for the whole UI** (`static/js/sky.js`, shared by the dashboard and login):
+  the background follows the sun's real elevation at the server's location (or this device's when
+  📍 is on), re-evaluated every minute — night → dawn → golden hour → day → golden hour → dusk —
+  with warmer sunsets than sunrises and smooth 6 s colour glides. At night a constellation fades in
+  behind the glass; by day it fades out and stops drawing. Glass darkens and secondary text lightens
+  as the sky brightens so everything stays readable. User menu → **Sky**: Auto, Dawn, Day, Dusk, Night.
+  The login page reuses the last location seen by the dashboard (or a time-zone estimate).
+- **Live disk I/O, btop-style** — every drive row shows an IO% meter (busy time) and live read and
+  write rates with one-minute bar graphs, plus total read/write in the card header. Columns adapt to
+  the card's width (container queries), dropping graphs and temperature on narrow layouts.
+- **Moon phase** in the weather popover: phase name, % lit and day of the lunar cycle, with the
+  netdiag icon drawn at that phase (night weather icons already show the real phase).
 - **Every screen from phones to 8K** — tested on 15 viewports (360 px phones, phone landscape,
   tablets, 720p, laptops incl. HiDPI, 1080p, 1440p, 4K at 100 %/150 %, TVs, 8K at 100 %/200 %) for
   horizontal scrolling, off-screen elements, clipped text and errors:

@@ -185,6 +185,21 @@
   $("optMotion").addEventListener("change", (e) => { store.set("motion", e.target.checked ? "on" : "off"); applyPrefs(); });
   applyPrefs();
 
+  /* ------------------------------------------------------------ living sky */
+  const SKY = window.SWZ_SKY;
+  if (SKY) {
+    SKY.init({ canvas: $("sky"), fps: 24, interactive: true, speed: .6, max: 200 });
+    const SRC = { device: "this device's location", server: "the server's location", timezone: "your time zone (no location yet)" };
+    const paintSkyMenu = (st) => {
+      $("skyPhase").textContent = st.phase + (st.mode === "auto" ? ` · sun ${st.elevation >= 0 ? "+" : ""}${Math.round(st.elevation)}°` : "");
+      $("skySrc").textContent = st.mode === "auto" ? `Auto follows the sun at ${SRC[st.source] || st.source}; updates every minute.` : "Fixed sky. Choose Auto to follow the real sun.";
+      document.querySelectorAll("[data-sky]").forEach((b) => { const on = b.dataset.sky === st.mode; b.setAttribute("aria-selected", String(on)); b.setAttribute("aria-checked", String(on)); });
+    };
+    document.addEventListener("swz-sky", (e) => paintSkyMenu(e.detail));
+    paintSkyMenu(SKY.state());
+    document.querySelectorAll("[data-sky]").forEach((b) => b.addEventListener("click", () => SKY.setMode(b.dataset.sky)));
+  }
+
   const menu = $("menu"), menuBtn = $("menuBtn");
   menuBtn.addEventListener("click", (e) => { e.stopPropagation(); menu.hidden = !menu.hidden; menuBtn.setAttribute("aria-expanded", String(!menu.hidden)); });
   document.addEventListener("click", (e) => { if (!menu.contains(e.target)) { menu.hidden = true; menuBtn.setAttribute("aria-expanded", "false"); } });
@@ -445,6 +460,9 @@
         <span class="kind">${esc(dr.kind)}</span>
         <span class="dr-name"><b>${esc(dr.model)}</b><small>${esc(dr.name)} · ${bytes(dr.capacity, 1)}</small></span>
         ${key}
+        <span class="dr-busy" title="IO% — share of time the disk was busy"><small>IO</small><span class="bar"><i data-busy-bar></i></span><b data-io="busy">–</b></span>
+        <span class="dr-io" title="Read"><span class="dr-io-head"><i class="dot s1"></i><b data-io="read">–</b></span><span class="spark" data-spark="read"></span></span>
+        <span class="dr-io" title="Write"><span class="dr-io-head"><i class="dot s2"></i><b data-io="write">–</b></span><span class="spark" data-spark="write"></span></span>
         <span class="dr-temp ${tl && tl !== "good" ? "s-" + tl : ""}">${dr.temp != null ? dr.temp + "°" : "–"}</span>
         <span class="badge ${h.cls}">${h.text}</span>
       </button>`;
@@ -453,11 +471,39 @@
     if (lastLive) renderDriveIO(lastLive.disk_io);
   }
 
+  /* btop-style live disk I/O: per-disk history of read/write (30 samples = 1 min) drawn as block bars */
+  const DISK_HIST = 30, diskHist = {};
+  function sparkBars(vals, color) {
+    const max = Math.max(256 * 1024, ...vals), n = DISK_HIST, w = 3, gap = 1;
+    let out = "";
+    for (let i = 0; i < n; i++) {
+      const v = vals[i - (n - vals.length)];
+      if (v == null) continue;
+      const h = Math.max(v > 0 ? 1.5 : 0.6, (v / max) * 22);
+      out += `<rect x="${i * (w + gap)}" y="${(22 - h).toFixed(1)}" width="${w}" height="${h.toFixed(1)}" rx="1" fill="${color}" opacity="${v > 0 ? 0.9 : 0.25}"/>`;
+    }
+    return `<svg viewBox="0 0 ${n * (w + gap)} 22" preserveAspectRatio="none" aria-hidden="true">${out}</svg>`;
+  }
   function renderDriveIO(io) {
-    document.querySelectorAll("#popDrive .io").forEach((el) => {
+    let tr = 0, tw = 0;
+    for (const [dev, d] of Object.entries(io)) {
+      const h = diskHist[dev] || (diskHist[dev] = { r: [], w: [] });
+      h.r.push(d.read || 0); h.w.push(d.write || 0);
+      if (h.r.length > DISK_HIST) { h.r.shift(); h.w.shift(); }
+      tr += d.read || 0; tw += d.write || 0;
+    }
+    const tot = $("diskTotals");
+    if (tot) tot.innerHTML = `<span><i class="dot s1"></i>Read <b>${rate(tr)}</b></span><span><i class="dot s2"></i>Write <b>${rate(tw)}</b></span>`;
+    const c1 = css("--s1"), c2 = css("--s2");
+    document.querySelectorAll(".drive-row, #popDrive .io").forEach((el) => {
       const d = io[el.dataset.dev]; if (!d) return;
       const set = (k, v) => { const n = el.querySelector(`[data-io="${k}"]`); if (n) n.textContent = v; };
       set("read", rate(d.read)); set("write", rate(d.write)); set("busy", pct(d.busy));
+      const bar = el.querySelector("[data-busy-bar]");
+      if (bar) { const b = d.busy || 0, l = lvl(b, 70, 90); bar.style.width = Math.max(b, 1) + "%"; bar.style.background = l === "good" ? c1 : levelColor(l); }
+      const h = diskHist[el.dataset.dev], sr = el.querySelector('[data-spark="read"]'), sw = el.querySelector('[data-spark="write"]');
+      if (h && sr) sr.innerHTML = sparkBars(h.r, c1);
+      if (h && sw) sw.innerHTML = sparkBars(h.w, c2);
     });
   }
 
@@ -512,10 +558,13 @@
     $("ipRows").innerHTML = rows.map(([k, v, sans]) => `<div><span>${esc(k)}</span><b class="${sans ? "sans" : ""}" title="${esc(v)}">${esc(v)}</b></div>`).join("");
 
     serverWeather = p.weather; serverLookups = p.lookups;
+    const sLat = (p.weather && p.weather.lat) ?? (p.geo && p.geo.lat), sLon = (p.weather && p.weather.lon) ?? (p.geo && p.geo.lon);
+    serverLoc = sLat != null && sLon != null ? { lat: sLat, lon: sLon } : null;
+    if (SKY && serverLoc && store.get("wxMode", "server") !== "device") SKY.setLocation(serverLoc.lat, serverLoc.lon, "server");
     if (store.get("wxMode", "server") !== "device") renderWeather(p.weather, p.lookups);
   }
 
-  let serverWeather = null, serverLookups = true;
+  let serverWeather = null, serverLookups = true, serverLoc = null;
   function renderWeather(w, lookups) {
     if (!w) {
       $("wxIcon").innerHTML = ""; $("wxIconBig").innerHTML = ""; $("wxTemp").textContent = "–"; $("wxTempBig").textContent = "–";
@@ -531,6 +580,11 @@
     $("wxTemp").textContent = T(w.temp); $("wxTempBig").textContent = T(w.temp);
     $("wxText").textContent = shortName;
     $("wxFeels").textContent = `${longName} · feels like ${T(w.feels)}`;
+    if (WXI) {   // moon phase (lit fraction, waxing/waning) at this location's hemisphere
+      const m = WXI.moonNow(w.lat);
+      $("wxMoon").innerHTML = `<span class="moon-ico">${WXI.wxIcon(0, false, "line", 40, m)}</span>
+        <span><b>${WXI.moonName(m.age)}</b><small>${Math.round(m.illum * 100)}% lit · day ${Math.round(m.age * 29.53)} of 29.5</small></span>`;
+    }
     $("wxFoot").innerHTML = [
       ["H/L", `${T(w.high)} / ${T(w.low)}`], ["Humidity", w.humidity != null ? w.humidity + "%" : "–"],
       ["Wind", w.wind != null ? `${Math.round(w.wind)} ${w.units.wind}` : "–"],
@@ -552,6 +606,7 @@
       const r = await getJSON(S.api.weather + q);
       if (!r.weather) throw new Error(r.error || "no data");
       renderWeather(r.weather, true);
+      if (SKY) SKY.setLocation(pos.coords.latitude, pos.coords.longitude, "device");
       btn.setAttribute("aria-pressed", "true"); btn.title = "Showing your location — click for the server's";
       store.set("wxMode", "device"); return true;
     } catch (err) {
@@ -565,6 +620,7 @@
       if (store.get("wxMode", "server") === "device") {
         store.set("wxMode", "server"); $("wxLocate").setAttribute("aria-pressed", "false");
         $("wxLocate").title = "Use this device's location"; renderWeather(serverWeather, serverLookups);
+        if (SKY && serverLoc) SKY.setLocation(serverLoc.lat, serverLoc.lon, "server");
       } else deviceWeather(true);
     });
     $("clockBtn").addEventListener("click", () => { store.set("clock24", store.get("clock24", "off") === "on" ? "off" : "on"); tickClock(); });
