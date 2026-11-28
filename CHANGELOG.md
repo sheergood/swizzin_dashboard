@@ -10,6 +10,10 @@ seedbox servers. Format follows [Keep a Changelog](https://keepachangelog.com/en
   (same kind of bug as the stray uptime dot), so keyboard focus landed at the card's corner. It
   now sits exactly on its switch; clicks and keyboard work as before.
 
+- Porcelain (Light): the "Filter apps / processes" fields and the segmented tabs (7 days / 24
+  hours / …, CPU / Memory) used a fixed black tint that showed as flat grey blocks on white glass;
+  they're white and hairline-edged now, and the search focus ring follows the theme's accent.
+
 ### Checked
 - Layout sweep (`tests/tools/layout_sweep.py`) at phone, tablet, laptop, 1440p and 4K in Auto,
   Light and Dark, opening the specs popover, menu, command palette and every traffic view: no
