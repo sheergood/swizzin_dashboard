@@ -1301,6 +1301,13 @@
     sonarr: "Sonarr installs the update with its own updater and restarts itself, usually within a minute.",
     radarr: "Radarr installs the update with its own updater and restarts itself, usually within a minute.",
     prowlarr: "Prowlarr installs the update with its own updater and restarts itself, usually within a minute.",
+    lidarr: "Lidarr installs the update with its own updater and restarts itself, usually within a minute.",
+    navidrome: "The server runs swizzin's Navidrome upgrade: it downloads the official release and restarts Navidrome. If it doesn't come back up, the previous version is put back.",
+    netronome: "The server runs swizzin's Netronome upgrade: it downloads the official release and restarts Netronome for each user. If it doesn't come back up, the previous version is put back.",
+    emby: "The server installs the new Emby Server package from Emby's official releases. Emby restarts, so anyone watching is interrupted for about a minute.",
+    lounge: "The server updates The Lounge with swizzin's upgrade (yarn) and restarts it; IRC connections reconnect.",
+    jellyfin: "The server upgrades only the Jellyfin packages from Jellyfin's own repository. Jellyfin restarts, so anyone watching is interrupted for about a minute.",
+    ombi: "The server upgrades only the Ombi package from Ombi's own repository and restarts Ombi.",
   };
   const vtxt = (v) => (v ? (/^\d/.test(v) ? "v" + v : v) : "?");
   // 1.41.5.9522 → 1.41.6.9606 reads as v1.41.5 → v1.41.6 (build numbers only when they're the difference)
@@ -1335,7 +1342,7 @@
     if (!a.installed && a.error) return { cls: "err", html: `<span class="dot"></span><span class="uv" title="${esc(a.error)}">Couldn't check for updates</span>` };
     if (!a.available) return { cls: "ok", html: `<span class="dot"></span><span class="uv"${a.error ? ` title="Last check failed: ${esc(a.error)}"` : ""}>Up to date · <b title="${esc(vtxt(a.installed))}">${esc(vtxt(vshort(a.installed)))}</b></span>` };
     if (a.action === "notify")
-      return { cls: "avail", html: `<span class="dot"></span>${notesBtn(`${vers} available`, `${P} is built from source on this server, so it isn't updated from the panel`)}` };
+      return { cls: "avail", html: `<span class="dot"></span>${notesBtn(`${vers} available`, `Torrent apps are updated by you, not from the panel`)}` };
     if (a.action === "needs-update")
       return { cls: "avail", html: `<span class="dot"></span>${notesBtn(vers, "Run box update on the server once to enable upgrades from the panel")}` };
     if (a.action === "blocked")
@@ -1461,7 +1468,7 @@
       const can = upgradable(a);
       $("updTitle").textContent = can ? `Update ${P} to ${vtxt(a.latest)}?` : `${P} ${vtxt(a.latest)}`;
       $("updWhat").textContent = can ? (UPD_HOW[name] || "") : a.action === "notify"
-        ? `You're on ${vtxt(a.installed)}. qBittorrent is built from source on this server, so it isn't updated from the panel.`
+        ? `You're on ${vtxt(a.installed)}. Torrent apps are updated by you (for example with box upgrade over SSH, at a quiet moment), not from the panel.`
         : a.action === "needs-update" ? "Run box update on the server once to enable upgrades from the panel."
         : a.action === "blocked" ? `${P} says its built-in updater can't install this one; update it from ${P} itself.` : "";
       if (a.notes) notes.innerHTML = notesHTML(a.notes);

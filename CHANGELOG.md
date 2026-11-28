@@ -3,6 +3,21 @@
 Fork of [liaralabs/swizzin_dashboard](https://github.com/liaralabs/swizzin_dashboard), tuned for
 seedbox servers. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [sheergood-22] — Nov 28 2026
+
+### Added
+- **App updates for more apps** (needs swizzin sheergood-13):
+  - Navidrome, Netronome, Emby, The Lounge, Jellyfin and Ombi are upgraded from the card through
+    `panel-upgrade`. Each dialog says what happens; for Emby and Jellyfin that's a restart that
+    interrupts streams.
+  - Lidarr updates itself, like Sonarr, Radarr and Prowlarr.
+- **All torrent apps are shown, never upgraded:** qBittorrent, rTorrent, ruTorrent, Flood,
+  Transmission and qui. The card says a newer version exists; you update them yourself.
+
+### Checked
+- Unit test: the new apps get an Update button, torrent apps are refused with a clear message,
+  and only the requested app reaches `panel-upgrade`.
+
 ## [sheergood-21] — Nov 28 2026
 
 ### Fixed

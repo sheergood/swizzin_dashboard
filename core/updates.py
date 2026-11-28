@@ -6,15 +6,16 @@ Where the answers come from
   /var/lib/swizzin/upgrades/      one <app>.json (progress) and <app>.log per root upgrade
 
 How each app is upgraded
-  autobrr, Filebrowser, FileBrowser Quantum, Plex
+  autobrr, Filebrowser, FileBrowser Quantum, Plex, Navidrome, Netronome, Emby, The Lounge,
+  Jellyfin, Ombi
       sudo -n /etc/swizzin/scripts/panel-upgrade <app>: a root-owned script that accepts only these
       names and runs the upgrade as its own systemd job (backup, health check, roll back), so it
       finishes even if the panel restarts
-  Sonarr, Radarr, Prowlarr
+  Sonarr, Radarr, Prowlarr, Lidarr
       their own built-in updater, asked through their API with the key the root collector shares;
       no root needed. The panel watches until the new version answers.
-  qBittorrent
-      never: it's built from source, so the card only says a newer version exists
+  qBittorrent, rTorrent, ruTorrent, Flood, Transmission, qui (torrent apps)
+      never: you update them yourself; the card only says a newer version exists
 
 Only one upgrade runs at a time, nothing starts without the admin pressing a button and confirming,
 and every failure comes back as a message rather than an exception.
@@ -34,9 +35,10 @@ UPGRADES_DIR = os.environ.get("SWZ_TEST_UPGRADES", "/var/lib/swizzin/upgrades")
 ARR_FILE = os.environ.get("SWZ_TEST_ARR", "/var/lib/swizzin/arr.json")
 PANEL_UPG = "/etc/swizzin/scripts/panel-upgrade"
 
-ROOT_APPS = ("autobrr", "filebrowser", "fbquantum", "plex")
-ARR_APPS = {"sonarr": "v3", "radarr": "v3", "prowlarr": "v1"}
-NOTIFY_ONLY = ("qbittorrent",)
+ROOT_APPS = ("autobrr", "filebrowser", "fbquantum", "plex", "navidrome", "netronome", "emby", "lounge", "jellyfin", "ombi")
+ARR_APPS = {"sonarr": "v3", "radarr": "v3", "prowlarr": "v1", "lidarr": "v1"}
+# torrent clients and their web UIs: you update them yourself, the card only says a newer version exists
+NOTIFY_ONLY = ("qbittorrent", "rtorrent", "rutorrent", "flood", "transmission", "qui")
 KNOWN = ROOT_APPS + tuple(ARR_APPS) + NOTIFY_ONLY
 
 CHECK_COOLDOWN = 300        # GitHub allows ~60 anonymous lookups an hour per server
@@ -301,7 +303,7 @@ def upgrade(cfg, app, major=False):
     """Start upgrading one app. Returns (ok, message). A new major version of Sonarr/Radarr/Prowlarr
     is installed only with major=True (the admin confirmed that version in the dialog)."""
     if app in NOTIFY_ONLY:
-        return False, "qBittorrent is built from source; update it over SSH"
+        return False, "Torrent apps are updated by you, not from the panel"
     if app not in ROOT_APPS and app not in ARR_APPS:
         return False, "This app can't be upgraded from the panel"
     with _lock:

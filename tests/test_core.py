@@ -956,6 +956,23 @@ class Updates(unittest.TestCase):
         self.assertEqual(j["state"], "done")
         self.assertIn("confirmed", self.up.log(self.cfg, "sonarr"))
 
+    def test_new_apps_and_torrent_apps(self):
+        now = int(time.time())
+        self.write("updates.json", {"checked": now, "apps": {
+            "navidrome": {"installed": "0.63.0", "latest": "0.64.2", "available": True, "checked": now},
+            "jellyfin": {"installed": "10.10.6", "latest": "10.10.7", "available": True, "checked": now},
+            "rtorrent": {"installed": "0.15.1", "latest": "0.16.29", "available": True, "checked": now},
+            "transmission": {"installed": "4.0.5", "latest": "4.1.4", "available": True, "checked": now}}})
+        st = self.up.status(self.cfg)["apps"]
+        self.assertEqual((st["navidrome"]["action"], st["jellyfin"]["action"]), ("upgrade", "upgrade"))
+        self.assertEqual((st["rtorrent"]["action"], st["transmission"]["action"]), ("notify", "notify"))
+        for app in ("rtorrent", "transmission"):
+            ok, msg = self.up.upgrade(self.cfg, app)
+            self.assertFalse(ok)
+            self.assertIn("Torrent apps", msg)
+        self.assertTrue(self.up.upgrade(self.cfg, "navidrome")[0])
+        self.assertEqual(self.calls_made(), ["navidrome"])
+
 
 class AuthLog(unittest.TestCase):
     """Wrong panel passwords for fail2ban: only time + address, deduplicated, never loopback."""
