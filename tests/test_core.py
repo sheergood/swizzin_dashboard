@@ -734,3 +734,204 @@ class MediaQueue(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class Updates(unittest.TestCase):
+    """App updates: merging the root check's answer, starting upgrades, *arr self-updates."""
+    @classmethod
+    def setUpClass(cls):
+        import socket
+        import subprocess
+        here = os.path.dirname(os.path.abspath(__file__))
+        cls.srv = {}
+        for mode in ("ok", "fail", "noop"):
+            with socket.socket() as s:
+                s.bind(("127.0.0.1", 0))
+                port = s.getsockname()[1]
+            p = subprocess.Popen([sys.executable, os.path.join(here, "tools", "fake_servarr.py"), str(port), mode],
+                                 stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, universal_newlines=True)
+            p.stdout.readline()
+            cls.srv[mode] = (p, port)
+
+    @classmethod
+    def tearDownClass(cls):
+        for p, _ in cls.srv.values():
+            p.kill()
+            p.wait()
+            p.stdout.close()
+
+    def setUp(self):
+        import core.updates as up
+        self.up = up
+        self.d = tempfile.mkdtemp()
+        up._mem.update(check_at=0.0, pending={})
+        self.saved_dir = up.UPGRADES_DIR
+        up.UPGRADES_DIR = os.path.join(self.d, "upgrades")
+        os.makedirs(up.UPGRADES_DIR)
+        self.calls = os.path.join(self.d, "calls")
+        self.rc = os.path.join(self.d, "rc")
+        fake = os.path.join(self.d, "fake-upgrade")
+        with open(fake, "w") as f:
+            f.write('#!/bin/sh\necho "$1" >> "{}"\nrc=$(cat "{}" 2>/dev/null || echo 0)\n'
+                    '[ "$rc" = 4 ] && echo "panel-upgrade: another upgrade is running" >&2\nexit "$rc"\n'.format(self.calls, self.rc))
+        os.chmod(fake, 0o755)
+        self.cfg = {"UPDATES_FILE": os.path.join(self.d, "updates.json"), "ARR_FILE": os.path.join(self.d, "arr.json"),
+                    "UPDATE_JOBS_FILE": os.path.join(self.d, "jobs.json"), "UPGRADE_CMD": [fake]}
+        now = int(time.time()) - 60
+        self.write("updates.json", {"checked": now, "apps": {
+            "autobrr": {"installed": "1.48.0", "latest": "1.50.0", "available": True, "notes": "- fix", "url": "https://github.com/x", "checked": now},
+            "plex": {"installed": "1.41.3.9314", "latest": "1.41.3.9314", "available": False, "checked": now},
+            "qbittorrent": {"installed": "4.6.7", "latest": "5.0.4", "available": True, "url": "javascript:alert(1)", "checked": now},
+            "sonarr": {"installed": "4.0.10.2544", "latest": "4.0.11.2680", "available": True, "method": "self", "checked": now},
+            "evil": {"installed": "1", "latest": "2", "available": True}}})
+
+    def tearDown(self):
+        self.up.UPGRADES_DIR = self.saved_dir
+
+    def write(self, name, obj):
+        with open(os.path.join(self.d, name), "w") as f:
+            json.dump(obj, f)
+
+    def arr(self, mode):
+        port = self.srv[mode][1]
+        self.write("arr.json", {"sonarr": {"url": "http://127.0.0.1:{}/sonarr".format(port), "key": "s" * 32}})
+
+    def calls_made(self):
+        try:
+            with open(self.calls) as f:
+                return f.read().split()
+        except OSError:
+            return []
+
+    def test_status_merges_and_filters(self):
+        st = self.up.status(self.cfg)
+        self.assertNotIn("evil", st["apps"])
+        self.assertEqual(st["apps"]["qbittorrent"]["action"], "notify")
+        self.assertIsNone(st["apps"]["qbittorrent"]["url"])               # only https links reach the page
+        self.assertEqual(st["apps"]["autobrr"]["action"], "upgrade")
+        self.assertEqual(st["apps"]["sonarr"]["action"], "blocked")        # no API details yet
+        self.assertFalse(st["checking"])
+
+    def test_without_sudo_rule_root_apps_wait_for_box_update(self):
+        cfg = dict(self.cfg)
+        del cfg["UPGRADE_CMD"]
+        with mock.patch.object(self.up, "supported", return_value=False):
+            st = self.up.status(cfg)
+            self.assertEqual(st["apps"]["autobrr"]["action"], "needs-update")
+            ok, msg = self.up.upgrade(cfg, "autobrr")
+        self.assertFalse(ok)
+        self.assertIn("box update", msg)
+
+    def test_qbittorrent_and_unknown_apps_are_refused(self):
+        for app in ("qbittorrent", "nginx", "../x", ""):
+            ok, _ = self.up.upgrade(self.cfg, app)
+            self.assertFalse(ok, app)
+        self.assertEqual(self.calls_made(), [])
+
+    def test_no_update_waiting_is_refused(self):
+        ok, msg = self.up.upgrade(self.cfg, "plex")
+        self.assertFalse(ok)
+        self.assertEqual(self.calls_made(), [])
+
+    def test_root_upgrade_starts_once(self):
+        ok, msg = self.up.upgrade(self.cfg, "autobrr")
+        self.assertTrue(ok, msg)
+        self.assertEqual(self.calls_made(), ["autobrr"])
+        st = self.up.status(self.cfg)
+        self.assertEqual(st["apps"]["autobrr"]["job"]["state"], "running")   # "Starting…" before the job writes
+        self.assertEqual(st["busy"], "autobrr")
+        self.arr("ok")
+        ok, msg = self.up.upgrade(self.cfg, "sonarr")                         # one at a time
+        self.assertFalse(ok)
+        self.assertIn("one at a time", msg)
+        with open(os.path.join(self.up.UPGRADES_DIR, "autobrr.json"), "w") as f:  # job ran and finished fast
+            json.dump({"state": "done", "message": "autobrr upgraded", "started": int(time.time()), "finished": int(time.time())}, f)
+        st = self.up.status(self.cfg)
+        self.assertIsNone(st["busy"])                                         # not held up by the start grace
+        self.assertEqual(st["apps"]["autobrr"]["job"]["state"], "done")
+
+    def test_root_job_progress_and_stale(self):
+        path = os.path.join(self.up.UPGRADES_DIR, "autobrr.json")
+        with open(path, "w") as f:
+            json.dump({"app": "autobrr", "state": "running", "message": "Upgrading", "started": int(time.time()), "finished": None}, f)
+        self.assertEqual(self.up.status(self.cfg)["busy"], "autobrr")
+        with open(path, "w") as f:
+            json.dump({"app": "autobrr", "state": "running", "started": int(time.time()) - 3 * 3600, "finished": None}, f)
+        st = self.up.status(self.cfg)
+        self.assertEqual(st["apps"]["autobrr"]["job"]["state"], "failed")     # killed part-way: not stuck "running"
+        self.assertIsNone(st["busy"])
+
+    def test_busy_server_message(self):
+        with open(self.rc, "w") as f:
+            f.write("4")
+        ok, msg = self.up.upgrade(self.cfg, "autobrr")
+        self.assertFalse(ok)
+        self.assertIn("Another upgrade is running", msg)
+        self.assertIsNone(self.up.status(self.cfg)["busy"])
+
+    def test_arr_self_update_succeeds(self):
+        self.arr("ok")
+        self.assertEqual(self.up.status(self.cfg)["apps"]["sonarr"]["action"], "upgrade")
+        ok, msg = self.up.upgrade(self.cfg, "sonarr")
+        self.assertTrue(ok, msg)
+        deadline = time.time() + 10
+        while time.time() < deadline:
+            st = self.up.status(self.cfg)
+            if st["apps"]["sonarr"]["job"]["state"] != "running":
+                break
+            time.sleep(0.3)
+        a = st["apps"]["sonarr"]
+        self.assertEqual(a["job"]["state"], "done")
+        self.assertEqual(a["installed"], "4.0.11.2680")
+        self.assertFalse(a["available"])
+        self.assertIn("check", self.calls_made())                             # asks the server for a fresh check
+        self.assertIn("4.0.11", self.up.log(self.cfg, "sonarr"))
+
+    def test_arr_updater_failure_is_reported(self):
+        self.arr("fail")
+        self.assertTrue(self.up.upgrade(self.cfg, "sonarr")[0])
+        a = self.up.status(self.cfg)["apps"]["sonarr"]
+        self.assertEqual(a["job"]["state"], "failed")
+        self.assertIn("isn't writable", a["job"]["message"])
+
+    def test_arr_noop_ends_as_failed_not_forever(self):
+        self.arr("noop")
+        self.assertTrue(self.up.upgrade(self.cfg, "sonarr")[0])
+        self.assertEqual(self.up.status(self.cfg)["apps"]["sonarr"]["job"]["state"], "running")
+        with open(self.cfg["UPDATE_JOBS_FILE"]) as f:
+            jobs = json.load(f)
+        jobs["sonarr"]["started"] -= 300
+        with open(self.cfg["UPDATE_JOBS_FILE"], "w") as f:
+            json.dump(jobs, f)
+        j = self.up.status(self.cfg)["apps"]["sonarr"]["job"]
+        self.assertEqual(j["state"], "failed")
+        self.assertIn("open Sonarr", j["message"])
+
+    def test_arr_address_must_be_local(self):
+        self.write("arr.json", {"sonarr": {"url": "http://evil.example:80", "key": "s" * 32}})
+        self.assertEqual(self.up.status(self.cfg)["apps"]["sonarr"]["action"], "blocked")
+        self.assertFalse(self.up.upgrade(self.cfg, "sonarr")[0])
+
+    def test_check_has_a_cooldown(self):
+        self.assertTrue(self.up.check(self.cfg)[0])
+        self.assertTrue(self.up.status(self.cfg)["checking"])
+        ok, msg = self.up.check(self.cfg)
+        self.assertFalse(ok)
+        self.assertEqual(self.calls_made(), ["check"])
+
+    def test_log_is_capped_and_clean(self):
+        with open(os.path.join(self.up.UPGRADES_DIR, "plex.log"), "w") as f:
+            f.write("\x1b[1;32mok\x1b[0m\n" + "x" * 100 + "\n" + ("line\n" * 20000))
+        text = self.up.log(self.cfg, "plex")
+        self.assertLessEqual(len(text), self.up.LOG_MAX + 4)
+        self.assertNotIn("\x1b", text)
+        self.assertEqual(self.up.log(self.cfg, "../../etc/passwd"), "")
+
+    def test_arr_already_updated_elsewhere_is_not_reinstalled(self):
+        self.arr("ok")
+        self.write("updates.json", {"checked": int(time.time()), "apps": {
+            "sonarr": {"installed": "4.0.9.1", "latest": "4.0.10.2544", "available": True, "method": "self"}}})
+        ok, msg = self.up.upgrade(self.cfg, "sonarr")                         # the app already runs 4.0.10
+        self.assertFalse(ok)
+        self.assertIn("already on", msg)
+        self.assertEqual(self.calls_made(), ["check"])

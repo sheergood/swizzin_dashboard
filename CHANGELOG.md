@@ -3,6 +3,58 @@
 Fork of [liaralabs/swizzin_dashboard](https://github.com/liaralabs/swizzin_dashboard), tuned for
 seedbox servers. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [sheergood-19] — Nov 28 2026
+
+### Added
+- **App updates on the Applications card** (admins only). Each app shows whether it's up to date
+  or which version is waiting, for example `v1.52.0 → v1.53.1`; on a narrow card this shortens to
+  `v1.53.1 available`. Click the version to read the release notes. Long notes scroll, and the
+  server cuts them to about 4000 characters with a link to the full notes.
+  - **Update** always asks first. The dialog says what will happen, including that Plex
+    restarts and interrupts streams.
+  - autobrr, Filebrowser, FileBrowser Quantum and Plex are upgraded by swizzin as root, through
+    `panel-upgrade`. swizzin's update keeps a backup, checks the app comes back and restores it if
+    not.
+  - Sonarr, Radarr and Prowlarr use their own built-in updater, through their API. The panel
+    waits until the new version answers and reports failures from the app's updater. If an app
+    was already updated some other way, it refreshes the check instead.
+  - **qBittorrent has no update button.** It only says a newer version exists, because it's
+    built from source on the server.
+  - Only one upgrade at a time. Every other Update button is disabled while one runs, and the
+    server refuses a second one too.
+  - A running upgrade shows a progress bar and a **Log** button with the last part of the output.
+    A finished one says "Updated to …" or "Update failed" (with Retry).
+  - **Check now** asks the server to check every app now. It also checks by itself every 6 hours,
+    and pressing it again within 5 minutes is refused to stay inside GitHub's hourly limit.
+    The header shows how many updates are waiting.
+  - **Update all** updates the listed apps one after another and never includes qBittorrent.
+  - Needs the swizzin side from sheergood/swizzin sheergood-11 (`box update`). Until then,
+    autobrr, Filebrowser and Plex say to run box update; Sonarr, Radarr and Prowlarr work
+    already.
+- `/api/updates`: GET is admin only. POST must come from the panel's own pages (the same XHR and
+  Origin check as the other buttons). Unknown actions, apps and log names are refused.
+
+### Changed
+- Sidebar items and app cards get a frosted-glass highlight on hover and for the selected item,
+  in Porcelain and Obsidian, replacing the flat grey tint.
+
+### Checked
+- Unit tests:
+  - root jobs: a running job, a finished one, and one that was interrupted;
+  - the start grace period no longer holds "busy" after a fast job;
+  - Sonarr updates against a fake Servarr: success, updater failure, and "completed but nothing
+    installed", which ends as failed instead of waiting forever;
+  - refusal of qBittorrent, unknown and non-local apps;
+  - the check cooldown;
+  - log size cap and colour-code removal.
+- Smoke test: the new API's XHR guard, bad action, qBittorrent refusal and log path refusal.
+- Click-through in Porcelain and Obsidian at desktop and phone widths, with no script errors:
+  - single update;
+  - a failed update, its log and Retry;
+  - a Sonarr self-update;
+  - Check now;
+  - Update all.
+
 ## [sheergood-18] — Nov 28 2026
 
 ### Fixed

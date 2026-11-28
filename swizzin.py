@@ -118,6 +118,7 @@ import core.prefs as prefs
 import core.ipcountry as ipcountry
 import core.uptime as uptime
 import core.arr as arr
+import core.updates as updates
 
 #Prepare the background threads
 thread = None
@@ -415,6 +416,31 @@ def api_prefs(user):
 @_api
 def api_media(user):
     return arr.media(app.config)
+
+@app.route('/api/updates', methods=['GET', 'POST'])
+@htpasswd.required
+@_api
+def api_updates(user):
+    """App updates: GET status (or ?log=<app>); POST {"action": "check"} or {"action": "upgrade", "app": name}."""
+    if flask.request.method == 'POST':
+        if not _same_site_xhr():
+            return {"error": "forbidden"}, 403
+        data = flask.request.get_json(silent=True)
+        data = data if isinstance(data, dict) else {}
+        action = data.get('action')
+        if action == 'check':
+            ok, msg = updates.check(app.config)
+        elif action == 'upgrade':
+            ok, msg = updates.upgrade(app.config, str(data.get('app') or '')[:40])
+        else:
+            return {"error": "unknown action"}, 400
+        st = updates.status(app.config)
+        st["ok"], st["message"] = ok, msg
+        return st
+    name = flask.request.args.get('log')
+    if name is not None:
+        return {"app": name[:40], "log": updates.log(app.config, name[:40])}
+    return updates.status(app.config)
 
 @app.route('/api/uptime')
 @htpasswd.required

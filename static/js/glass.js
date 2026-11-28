@@ -1203,7 +1203,7 @@
   }
 
   /* ============================================================ apps */
-  let statusMap = {};
+  let statusMap = {}, updReady = false;
   const apps = S.pages.slice().sort((a, b) => a.pretty_name.localeCompare(b.pretty_name));
 
   const cardCache = new Map();
@@ -1243,7 +1243,9 @@
     list.forEach((a) => paintApp(appCard(a), a));
     const tracked = Object.values(statusMap);
     const up = tracked.filter((s) => s.active).length;
-    $("svcSummary").textContent = tracked.length ? `${up} of ${tracked.length} services running · ${apps.length} installed` : `${apps.length} installed`;
+    $("svcSummary").textContent = (tracked.length ? `${up} of ${tracked.length} services running · ${apps.length} installed` : `${apps.length} installed`)
+      + ($("svcSummary").dataset.upd || "");
+    if (S.admin && updReady) paintUpdates();
   }
 
   async function loadStatus() {
@@ -1279,6 +1281,232 @@
     setTimeout(loadStatus, 1500);
   });
   $("svcSearch").addEventListener("input", renderApps);
+
+  /* ============================================================ app updates
+     The server checks every 6 hours (and on "Check now"); this shows the result on each app card.
+     autobrr / Filebrowser / Plex are upgraded by swizzin as root, Sonarr / Radarr / Prowlarr by
+     their own updater, qBittorrent only says a newer version exists. One upgrade at a time, always
+     after a confirmation; "Update all" works down the list one by one. */
+  const upd = { data: null, timer: null, queue: [], dlg: null, prevJobs: {} };
+  updReady = true;
+  const UPD_HOW = {
+    autobrr: "The server runs swizzin's autobrr upgrade: it downloads the official release and restarts autobrr for each user (a few seconds). If autobrr doesn't come back up, the previous version is put back.",
+    filebrowser: "The server runs swizzin's Filebrowser upgrade: it downloads the official release and restarts Filebrowser. If it doesn't come back up, the previous version is put back.",
+    fbquantum: "The server runs swizzin's FileBrowser Quantum upgrade, which checks the new release, keeps the old one and rolls back if it doesn't start.",
+    plex: "The server upgrades only the Plex Media Server package from Plex's own repository. Plex restarts, so anyone watching is interrupted for about a minute.",
+    sonarr: "Sonarr installs the update with its own updater and restarts itself, usually within a minute.",
+    radarr: "Radarr installs the update with its own updater and restarts itself, usually within a minute.",
+    prowlarr: "Prowlarr installs the update with its own updater and restarts itself, usually within a minute.",
+  };
+  const vtxt = (v) => (v ? (/^\d/.test(v) ? "v" + v : v) : "?");
+  // 1.41.5.9522 → 1.41.6.9606 reads as v1.41.5 → v1.41.6 (build numbers only when they're the difference)
+  const vpair = (a, b) => {
+    const pa = String(a || "").split("."), pb = String(b || "").split(".");
+    const cut = pa.length > 3 && pb.length > 3 && pa.slice(0, 3).join(".") !== pb.slice(0, 3).join(".");
+    return cut ? [pa.slice(0, 3).join("."), pb.slice(0, 3).join(".")] : [a, b];
+  };
+  // release notes: plain text made a little friendlier (headings bold, bullets, `code`); escaped first
+  const vshort = (v) => { const p = String(v || "").split("."); return p.length > 3 ? p.slice(0, 3).join(".") : v; };
+  const notesHTML = (t) => esc(String(t || "").replace(/\n{3,}/g, "\n\n")).split("\n").map((l) => {
+    const h = l.match(/^\s*#{1,6}\s+(.*)$/);
+    if (h) return `<b class="nh">${h[1]}</b>`;
+    return l.replace(/^(\s*)[-*]\s+/, "$1• ").replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>").replace(/`([^`]+)`/g, "<code>$1</code>");
+  }).join("\n");
+  const prettyApp2 = (n) => (apps.find((a) => a.name === n) || {}).pretty_name || n;
+  const upgradable = (a) => a && a.available && a.action === "upgrade" && !(a.job && a.job.state === "running");
+  function updRow(name) {
+    const a = upd.data && upd.data.apps[name];
+    if (!a || (!a.installed && !a.latest && !a.job)) return null;
+    const busy = upd.data.busy, j = a.job, P = esc(prettyApp2(name));
+    const [vi, vl] = vpair(a.installed, a.latest);
+    const vers = `<span class="vi">${esc(vtxt(vi))}<span class="arrow">→</span></span><b>${esc(vtxt(vl))}</b>`;
+    const notesBtn = (inner, title) => `<button class="uv" type="button" data-upd="notes" title="${esc(title)}">${inner}</button>`;
+    if (j && j.state === "running")
+      return { cls: "run", html: `<span class="spin" aria-hidden="true"></span><span class="uv" role="status" title="${esc(j.message || "")}">Updating to <b>${esc(vtxt(vpair(a.installed, a.latest)[1]))}</b>…</span><button class="ghost" type="button" data-upd="log">Log</button><span class="bar" aria-hidden="true"><i></i></span>` };
+    if (j && j.state === "failed")
+      return { cls: "fail", html: `<span class="dot"></span><span class="uv" title="${esc(j.message || "")}">Update failed</span><button class="ghost" type="button" data-upd="log">Log</button>${upgradable(a) ? `<button class="go" type="button" data-upd="go" ${busy ? "disabled" : ""}>Retry</button>` : ""}` };
+    if (j && j.state === "done")
+      return { cls: "done", html: `<span class="dot"></span><span class="uv" title="${esc(vtxt(a.installed))}${j.finished ? " · " + esc(ago(j.finished)) : ""}">Updated to <b>${esc(vtxt(vshort(a.installed)))}</b></span><button class="ghost" type="button" data-upd="log">Log</button>` };
+    if (!a.installed && a.error) return { cls: "err", html: `<span class="dot"></span><span class="uv" title="${esc(a.error)}">Couldn't check for updates</span>` };
+    if (!a.available) return { cls: "ok", html: `<span class="dot"></span><span class="uv"${a.error ? ` title="Last check failed: ${esc(a.error)}"` : ""}>Up to date · <b title="${esc(vtxt(a.installed))}">${esc(vtxt(vshort(a.installed)))}</b></span>` };
+    if (a.action === "notify")
+      return { cls: "avail", html: `<span class="dot"></span>${notesBtn(`${vers} available`, `${P} is built from source on this server, so it isn't updated from the panel`)}` };
+    if (a.action === "needs-update")
+      return { cls: "avail", html: `<span class="dot"></span>${notesBtn(vers, "Run box update on the server once to enable upgrades from the panel")}` };
+    if (a.action === "blocked")
+      return { cls: "avail", html: `<span class="dot"></span>${notesBtn(vers, `Install this update from ${P} itself`)}` };
+    return { cls: "avail", html: `<span class="dot"></span>${notesBtn(vers + `<span class="vn"> available</span>`, `${vtxt(a.installed)} → ${vtxt(a.latest)} · release notes`)}<button class="go" type="button" data-upd="go" ${busy ? `disabled title="${esc(prettyApp2(busy))} is updating"` : ""} aria-label="Update ${P} to ${esc(vtxt(a.latest))}">Update</button>` };
+  }
+  // narrow cards: "v1.41.5 → v1.41.6" becomes "v1.41.6 available" rather than being cut off
+  function fitUpdRows() {
+    document.querySelectorAll("#apps .upd .uv").forEach((uv) => {
+      const row = uv.closest(".upd");
+      row.classList.remove("tight");
+      if (!uv.querySelector(".vi")) return;
+      const r = document.createRange(); r.selectNodeContents(uv);         // buttons don't report scrollWidth
+      if (r.getBoundingClientRect().width > uv.getBoundingClientRect().width + 1) row.classList.add("tight");
+    });
+  }
+  if (window.ResizeObserver) {
+    let fitT;
+    new ResizeObserver(() => { clearTimeout(fitT); fitT = setTimeout(fitUpdRows, 80); }).observe($("apps"));
+  }
+  function ago(t) {
+    const m = Math.max(0, Math.round((Date.now() / 1000 - t) / 60));
+    return m < 1 ? "just now" : m < 60 ? `${m} min ago` : m < 1440 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} d ago`;
+  }
+  function paintUpdates() {
+    if (!upd.data) return;
+    apps.forEach((a) => {
+      const card = cardCache.get(a.name); if (!card) return;
+      const r = updRow(a.name);
+      let el = card.querySelector(".upd");
+      if (!r) { if (el) el.remove(); card.classList.remove("has-upd"); return; }
+      if (!el) { el = document.createElement("div"); card.appendChild(el); card.classList.add("has-upd"); }
+      const sig = r.cls + "|" + r.html;
+      if (el.dataset.sig === sig) return;
+      const had = el.contains(document.activeElement);
+      el.dataset.sig = sig; el.className = "upd " + r.cls; el.innerHTML = r.html;
+      if (had) { const f = el.querySelector("button"); if (f) f.focus({ preventScroll: true }); }   // keyboard users keep their place
+    });
+    fitUpdRows();
+    const d = upd.data, list = Object.entries(d.apps);
+    const avail = list.filter(([, a]) => a.available).length;
+    const ready = list.filter(([, a]) => upgradable(a)).map(([n]) => n);
+    $("updHead").hidden = !list.length && !d.supported;
+    $("updPill").hidden = !avail; $("updPill").textContent = `${avail} update${avail === 1 ? "" : "s"}`;
+    const chk = $("updCheck");
+    chk.disabled = d.checking || !d.supported; chk.textContent = d.checking ? "Checking…" : "Check now";
+    chk.title = !d.supported ? "Run box update on the server to enable update checks" : d.cooldown && !d.checking ? `Checked recently; available again in ${Math.ceil(d.cooldown / 60)} min` : "Check every app for updates now";
+    const all = $("updAll");
+    all.hidden = ready.length < 2 && !upd.queue.length;
+    all.disabled = !!d.busy || !!upd.queue.length;
+    all.textContent = upd.queue.length ? `Updating… (${upd.queue.length} left)` : `Update all (${ready.length})`;
+    const sum = $("svcSummary"), extra = d.checked ? ` · updates checked ${ago(d.checked)}` : "";
+    sum.dataset.upd = extra;
+    sum.textContent = sum.textContent.replace(/ · updates checked .*$/, "") + extra;
+  }
+  function noteJobChanges() {
+    Object.entries(upd.data.apps).forEach(([n, a]) => {
+      const st = a.job && a.job.state, was = upd.prevJobs[n];
+      if (was === "running" && st === "done") toast(`${prettyApp2(n)} updated to ${vtxt(a.installed)}`);
+      if (was === "running" && st === "failed") toast(`${prettyApp2(n)} update failed`);
+      upd.prevJobs[n] = st;
+    });
+  }
+  async function loadUpdates() {
+    clearTimeout(upd.timer);
+    try {
+      upd.data = await getJSON(S.api.updates);
+      noteJobChanges(); paintUpdates();
+      if (!upd.data.busy && upd.queue.length) nextInQueue();
+    } catch (e) { console.warn(e); }
+    const fast = upd.data && (upd.data.busy || upd.data.checking || upd.queue.length);
+    upd.timer = setTimeout(loadUpdates, fast ? 3000 : document.hidden ? 300000 : 60000);
+  }
+  async function updPost(body) {
+    const r = await fetch(S.api.updates, {
+      method: "POST", credentials: "same-origin",
+      headers: { "Content-Type": "application/json", "X-Requested-With": "XMLHttpRequest" }, body: JSON.stringify(body),
+    });
+    if (r.status === 401) { location.reload(); throw new Error("auth"); }
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.error || r.status);
+    return d;
+  }
+  async function startUpgrade(name) {
+    try {
+      const d = await updPost({ action: "upgrade", app: name });
+      upd.data = d; if (d.ok) upd.prevJobs[name] = "running";
+      toast(d.ok ? `Updating ${prettyApp2(name)}…` : d.message);
+      if (!d.ok) upd.queue = [];
+      paintUpdates();
+    } catch (e) { toast(`Couldn't start the update: ${e.message}`); upd.queue = []; }
+    loadUpdates();
+  }
+  function nextInQueue() {
+    while (upd.queue.length) {
+      const n = upd.queue.shift(), a = upd.data.apps[n];
+      if (upgradable(a)) { startUpgrade(n); return; }
+    }
+    paintUpdates();
+  }
+  function openUpd(mode, name) {
+    const a = upd.data && upd.data.apps[name], dlg = $("updDlg"), P = prettyApp2(name);
+    if (!a && mode !== "all") return;
+    const go = $("updGo"), link = $("updLink"), notes = $("updNotes");
+    upd.dlg = { mode, name, back: document.activeElement };
+    notes.classList.toggle("log", mode === "log"); notes.textContent = "";
+    link.hidden = true; go.hidden = false; go.disabled = !!(upd.data && upd.data.busy);
+    $("updCancel").textContent = "Cancel";
+    if (mode === "all") {
+      const ready = Object.entries(upd.data.apps).filter(([, x]) => upgradable(x));
+      $("updTitle").textContent = `Update ${ready.length} apps?`;
+      $("updWhat").textContent = "They're updated one after another, each with its own backup and check. Keep this page open until the list is done; an update that's already running always finishes.";
+      notes.textContent = ready.map(([n, x]) => `${prettyApp2(n)}  ${vtxt(x.installed)} → ${vtxt(x.latest)}`).join("\n");
+      go.textContent = "Update all";
+    } else if (mode === "log") {
+      $("updTitle").textContent = `${P} · update log`;
+      $("updWhat").textContent = a.job && a.job.message ? a.job.message : "";
+      notes.textContent = "Loading…"; go.hidden = true; $("updCancel").textContent = "Close";
+      getJSON(S.api.updates + "?log=" + encodeURIComponent(name))
+        .then((d) => { if (upd.dlg && upd.dlg.name === name) { notes.textContent = d.log || "No log yet."; notes.scrollTop = notes.scrollHeight; } })
+        .catch(() => { notes.textContent = "Couldn't load the log."; });
+    } else {
+      const can = upgradable(a);
+      $("updTitle").textContent = can ? `Update ${P} to ${vtxt(a.latest)}?` : `${P} ${vtxt(a.latest)}`;
+      $("updWhat").textContent = can ? (UPD_HOW[name] || "") : a.action === "notify"
+        ? `You're on ${vtxt(a.installed)}. qBittorrent is built from source on this server, so it isn't updated from the panel.`
+        : a.action === "needs-update" ? "Run box update on the server once to enable upgrades from the panel."
+        : a.action === "blocked" ? `${P} says its built-in updater can't install this one; update it from ${P} itself.` : "";
+      if (a.notes) notes.innerHTML = notesHTML(a.notes);
+      else notes.textContent = a.url ? "" : "No release notes were published with this version.";
+      go.hidden = !can; go.textContent = "Update now"; $("updCancel").textContent = can ? "Cancel" : "Close";
+    }
+    if (mode !== "all" && a && a.url) { link.href = a.url; link.hidden = false; }
+    dlg.hidden = false;
+    (go.hidden ? $("updCancel") : go).focus();
+  }
+  function closeUpd() {
+    const dlg = $("updDlg"); if (dlg.hidden) return;
+    dlg.hidden = true;
+    const back = upd.dlg && upd.dlg.back; upd.dlg = null;
+    if (back && back.isConnected) back.focus();
+  }
+  if (S.admin && S.api.updates) {
+    $("apps").addEventListener("click", (e) => {
+      const b = e.target.closest("[data-upd]"); if (!b) return;
+      const name = b.closest(".app").dataset.app, act = b.dataset.upd;
+      openUpd(act === "log" ? "log" : "notes", name);
+    });
+    $("updCheck").addEventListener("click", async (e) => {
+      const b = e.currentTarget; b.disabled = true; b.textContent = "Checking…";
+      try { const d = await updPost({ action: "check" }); upd.data = d; if (!d.ok) toast(d.message); paintUpdates(); }
+      catch (err) { toast(`Couldn't start the check: ${err.message}`); }
+      loadUpdates();
+    });
+    $("updAll").addEventListener("click", () => openUpd("all"));
+    $("updGo").addEventListener("click", () => {
+      const st = upd.dlg; if (!st) return;
+      closeUpd();
+      if (st.mode === "all") {
+        upd.queue = Object.entries(upd.data.apps).filter(([, x]) => upgradable(x)).map(([n]) => n);
+        nextInQueue();
+      } else startUpgrade(st.name);
+    });
+    $("updCancel").addEventListener("click", closeUpd);
+    $("updDlg").addEventListener("click", (e) => { if (e.target === e.currentTarget) closeUpd(); });
+    $("updDlg").addEventListener("keydown", (e) => {
+      if (e.key === "Escape") { e.preventDefault(); closeUpd(); return; }
+      if (e.key !== "Tab") return;                       // keep focus inside the dialog
+      const f = [...$("updDlg").querySelectorAll("button:not([hidden]):not(:disabled), a:not([hidden]), pre")];
+      if (!f.length) return;
+      const i = f.indexOf(document.activeElement);
+      if (e.shiftKey && i <= 0) { e.preventDefault(); f[f.length - 1].focus(); }
+      else if (!e.shiftKey && i === f.length - 1) { e.preventDefault(); f[0].focus(); }
+    });
+    document.addEventListener("visibilitychange", () => { if (!document.hidden) loadUpdates(); });
+  }
 
   /* ============================================================ command palette (Ctrl+K)
      Everything the page can do, by typing: open an app, jump to a card, start / stop / restart a
@@ -1490,6 +1718,7 @@
     every(60000, loadF2b);
     every(60000, loadUptime);
     every(60000, loadMedia);
+    if (S.api.updates) loadUpdates();
     loadPlex.recheck = true;
     every(5000, loadPlex);
     setInterval(tickClock, 1000);

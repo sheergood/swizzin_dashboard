@@ -317,7 +317,10 @@
     <section class="glass card" data-span="12">
       <div class="card-head">
         <div><h2>Applications</h2><p class="muted" id="svcSummary">–</p></div>
-        <input class="search" id="svcSearch" type="search" placeholder="Filter apps…" aria-label="Filter applications">
+        <div class="card-tools">
+          {% if admin %}<span class="upd-head" id="updHead" hidden><span class="upd-pill" id="updPill" hidden></span><button class="ghost" id="updCheck" type="button">Check now</button><button class="go" id="updAll" type="button" hidden></button></span>{% endif %}
+          <input class="search" id="svcSearch" type="search" placeholder="Filter apps…" aria-label="Filter applications">
+        </div>
       </div>
       <div class="apps" id="apps"></div>
     </section>
@@ -333,6 +336,18 @@
     {% endif %}
   </main>
   </div>
+
+  {% if admin %}
+  <div class="cmdk-back upd-back" id="updDlg" hidden>
+    <div class="glass upd-dlg" role="dialog" aria-modal="true" aria-labelledby="updTitle">
+      <h3 id="updTitle"></h3>
+      <p id="updWhat"></p>
+      <pre class="upd-notes" id="updNotes" tabindex="0"></pre>
+      <div class="row"><a class="ghost" id="updLink" target="_blank" rel="noopener noreferrer" hidden>Release notes ↗</a><span class="grow"></span>
+        <button class="ghost" id="updCancel" type="button">Cancel</button><button class="go" id="updGo" type="button">Update now</button></div>
+    </div>
+  </div>
+  {% endif %}
 
   <div class="cmdk-back" id="cmdk" hidden>
     <div class="cmdk glass" role="dialog" aria-modal="true" aria-label="Search apps and commands">
@@ -373,6 +388,7 @@
         prefs: {{ url_for('api_prefs')|tojson }},
         uptime: {{ url_for('api_uptime')|tojson }},
         media: {{ url_for('api_media')|tojson }},
+        updates: {{ url_for('api_updates')|tojson }},
         status: {{ url_for('app_status')|tojson }},
         service: {{ url_for('service')|tojson }},
         quota: {{ url_for('quota_free')|tojson }}
