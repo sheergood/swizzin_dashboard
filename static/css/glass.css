@@ -882,7 +882,8 @@ html[data-theme="light"] .plex-tag, html[data-theme="light"] .np-ico { color: #b
 .up-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 460px), 1fr)); gap: 8px 28px; }
 .up-row { display: grid; grid-template-columns: minmax(0, 9em) minmax(0, 1fr) 4.4em; align-items: center; gap: 12px; font-size: 13px; }
 .up-name { display: flex; align-items: center; gap: 8px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.up-name .side-dot { flex: none; }
+/* the sidebar's status dot is pinned to its icon's corner; here it sits in line, before the app's name */
+.up-name .side-dot { position: static; flex: none; width: 8px; height: 8px; border: 0; }
 .up-strip { display: grid; grid-template-columns: repeat(24, 1fr); gap: 2px; }
 .uc { display: block; height: 16px; border-radius: 3px; background: rgba(var(--hl), .12); }
 .uc.ok { background: var(--good); }

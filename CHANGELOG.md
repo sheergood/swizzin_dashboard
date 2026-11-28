@@ -3,6 +3,13 @@
 Fork of [liaralabs/swizzin_dashboard](https://github.com/liaralabs/swizzin_dashboard), tuned for
 seedbox servers. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [sheergood-17] — Nov 28 2026
+
+### Fixed
+- App uptime: each app's "running now" dot sits beside its name. It reused the sidebar's dot,
+  which is pinned to a corner, so every row's dot piled up as one stray dot outside the card's
+  bottom-right corner.
+
 ## [sheergood-16] — Nov 28 2026
 
 ### Removed
