@@ -927,8 +927,8 @@
     const failing = Array.isArray(d.failing) ? d.failing : [];
     $("f2bFailWrap").hidden = !failing.length;
     $("f2bFailing").innerHTML = failing.slice(0, 25).map((f) => `<div class="ban"><code title="${esc(f.ip)}${f.cc ? " · " + esc(countryName(f.cc)) : ""}">${f.cc ? flagHTML(f.cc, countryName(f.cc)) : ""}${esc(f.ip)}</code>
-        <span class="when" title="${new Date(f.last * 1000).toLocaleString()}">${ago(nowS - f.last)}</span>
-        <span class="meta"><span class="jail" title="${esc(f.jail)}">${esc(jailName(f.jail))}</span>${f.count} of ${f.maxretry} tries before a ban</span>
+        <span class="when" title="${new Date(Number(f.last) * 1000).toLocaleString()}">${ago(Math.max(0, nowS - Number(f.last)))}</span>
+        <span class="meta"><span class="jail" title="${esc(f.jail)}">${esc(jailName(f.jail))}</span>${Number(f.count) || 0} of ${Number(f.maxretry) || "?"} tries before a ban</span>
         <span class="st off">Watching</span></div>`).join("");
     const fTile = $("f2bStats").querySelectorAll(".metric")[3];
     if (fTile) fTile.title = failing.length ? failing.map((f) => `${f.ip} · ${jailName(f.jail)} · ${f.count}/${f.maxretry}`).join("\n")

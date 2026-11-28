@@ -90,7 +90,8 @@ def supported(cfg=None):
     if (cfg or {}).get("UPGRADE_CMD"):
         return True
     now = time.time()
-    if now - _sudo["checked"] > 300:
+    # re-checked every 5 min once allowed, every minute while not yet (right after box update)
+    if now - _sudo["checked"] > (300 if _sudo["ok"] else 60):
         _sudo["checked"] = now
         try:
             _sudo["ok"] = os.path.isfile(PANEL_UPG) and sp.run(

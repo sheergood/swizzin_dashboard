@@ -3,6 +3,19 @@
 Fork of [liaralabs/swizzin_dashboard](https://github.com/liaralabs/swizzin_dashboard), tuned for
 seedbox servers. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [sheergood-24] — Nov 28 2026
+
+### Fixed
+- Right after `box update`, the panel could keep saying "run box update" for up to 5 minutes,
+  because it cached the "not allowed yet" answer from sudo for as long as the "allowed" one.
+  "Not allowed" is now re-checked every minute.
+- Security card: the numbers in the "Failing now" list are always shown as numbers.
+
+### Checked
+- Review of the panel's update, security and app-control code. Text from outside is escaped
+  before it reaches the page, including process names, IP addresses, release notes, media titles
+  and Plex sessions. Every state-changing request still needs the panel's own XHR and Origin.
+
 ## [sheergood-23] — Nov 28 2026
 
 ### Fixed
