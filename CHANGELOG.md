@@ -3,6 +3,27 @@
 Fork of [liaralabs/swizzin_dashboard](https://github.com/liaralabs/swizzin_dashboard), tuned for
 seedbox servers. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [sheergood-21] — Nov 28 2026
+
+### Fixed
+- **A new major version of Sonarr, Radarr or Prowlarr (e.g. Prowlarr 2.x → 3.x) couldn't be
+  installed from the panel.** The panel asked for a normal update. The app refuses a major
+  version unless it's asked to install it explicitly, so the job ended with "Unable to install
+  major update…".
+  - The card now marks it with an amber dot as a new major version.
+  - Its Update dialog explains what a major version can change and has its own **Install major
+    update** button. That button sends the same "install anyway" request as the app's own
+    System → Updates page.
+  - **Update all never includes a major version**, and the server refuses one that wasn't
+    confirmed in its own dialog.
+- When an app finishes without installing an update, the card shows the app's own message
+  instead of adding "open … to update it" to it. The message is also kept in the update log.
+
+### Checked
+- Unit test against a fake Servarr that, like the real ones, installs a major version only when
+  asked explicitly: refused without the confirmation, installed with it.
+- Dialog and Update all count checked on a test panel with Prowlarr 2.6.5 → 3.1.0.
+
 ## [sheergood-20] — Nov 28 2026
 
 ### Added

@@ -1318,6 +1318,7 @@
   }).join("\n");
   const prettyApp2 = (n) => (apps.find((a) => a.name === n) || {}).pretty_name || n;
   const upgradable = (a) => a && a.available && a.action === "upgrade" && !(a.job && a.job.state === "running");
+  const inUpdateAll = (a) => upgradable(a) && !a.major;     // major versions are confirmed one by one
   function updRow(name) {
     const a = upd.data && upd.data.apps[name];
     if (!a || (!a.installed && !a.latest && !a.job)) return null;
@@ -1339,7 +1340,7 @@
       return { cls: "avail", html: `<span class="dot"></span>${notesBtn(vers, "Run box update on the server once to enable upgrades from the panel")}` };
     if (a.action === "blocked")
       return { cls: "avail", html: `<span class="dot"></span>${notesBtn(vers, `Install this update from ${P} itself`)}` };
-    return { cls: "avail", html: `<span class="dot"></span>${notesBtn(vers + `<span class="vn"> available</span>`, `${vtxt(a.installed)} → ${vtxt(a.latest)} · release notes`)}<button class="go" type="button" data-upd="go" ${busy ? `disabled title="${esc(prettyApp2(busy))} is updating"` : ""} aria-label="Update ${P} to ${esc(vtxt(a.latest))}">Update</button>` };
+    return { cls: "avail" + (a.major ? " major" : ""), html: `<span class="dot"></span>${notesBtn(vers + `<span class="vn"> available</span>`, `${vtxt(a.installed)} → ${vtxt(a.latest)}${a.major ? " · new major version" : ""} · release notes`)}<button class="go" type="button" data-upd="go" ${busy ? `disabled title="${esc(prettyApp2(busy))} is updating"` : ""} aria-label="Update ${P} to ${esc(vtxt(a.latest))}">Update</button>` };
   }
   // narrow cards: "v1.41.5 → v1.41.6" becomes "v1.41.6 available" rather than being cut off
   function fitUpdRows() {
@@ -1376,7 +1377,7 @@
     fitUpdRows();
     const d = upd.data, list = Object.entries(d.apps);
     const avail = list.filter(([, a]) => a.available).length;
-    const ready = list.filter(([, a]) => upgradable(a)).map(([n]) => n);
+    const ready = list.filter(([, a]) => inUpdateAll(a)).map(([n]) => n);
     $("updHead").hidden = !list.length && !d.supported;
     $("updPill").hidden = !avail; $("updPill").textContent = `${avail} update${avail === 1 ? "" : "s"}`;
     const chk = $("updCheck");
@@ -1418,9 +1419,9 @@
     if (!r.ok) throw new Error(d.error || r.status);
     return d;
   }
-  async function startUpgrade(name) {
+  async function startUpgrade(name, major) {
     try {
-      const d = await updPost({ action: "upgrade", app: name });
+      const d = await updPost({ action: "upgrade", app: name, major: !!major });
       upd.data = d; if (d.ok) upd.prevJobs[name] = "running";
       toast(d.ok ? `Updating ${prettyApp2(name)}…` : d.message);
       if (!d.ok) upd.queue = [];
@@ -1431,7 +1432,7 @@
   function nextInQueue() {
     while (upd.queue.length) {
       const n = upd.queue.shift(), a = upd.data.apps[n];
-      if (upgradable(a)) { startUpgrade(n); return; }
+      if (inUpdateAll(a)) { startUpgrade(n); return; }
     }
     paintUpdates();
   }
@@ -1444,7 +1445,7 @@
     link.hidden = true; go.hidden = false; go.disabled = !!(upd.data && upd.data.busy);
     $("updCancel").textContent = "Cancel";
     if (mode === "all") {
-      const ready = Object.entries(upd.data.apps).filter(([, x]) => upgradable(x));
+      const ready = Object.entries(upd.data.apps).filter(([, x]) => inUpdateAll(x));
       $("updTitle").textContent = `Update ${ready.length} apps?`;
       $("updWhat").textContent = "They're updated one after another, each with its own backup and check. Keep this page open until the list is done; an update that's already running always finishes.";
       notes.textContent = ready.map(([n, x]) => `${prettyApp2(n)}  ${vtxt(x.installed)} → ${vtxt(x.latest)}`).join("\n");
@@ -1466,6 +1467,15 @@
       if (a.notes) notes.innerHTML = notesHTML(a.notes);
       else notes.textContent = a.url ? "" : "No release notes were published with this version.";
       go.hidden = !can; go.textContent = "Update now"; $("updCancel").textContent = can ? "Cancel" : "Close";
+      if (can && a.major) {
+        const from = String(a.installed || "").split(".")[0], to = String(a.latest || "").split(".")[0];
+        $("updTitle").textContent = `Install ${P} ${vtxt(a.latest)}? (major version)`;
+        $("updWhat").textContent = `This moves ${P} from version ${from} to version ${to}. Major versions can change settings, `
+          + `drop older systems or need other apps updated too, so ${P} won't install it unless you confirm. `
+          + `Read the notes first; ${P} keeps its own backup and restarts itself.`;
+        go.textContent = "Install major update";
+        upd.dlg.major = true;
+      }
     }
     if (mode !== "all" && a && a.url) { link.href = a.url; link.hidden = false; }
     dlg.hidden = false;
@@ -1494,9 +1504,9 @@
       const st = upd.dlg; if (!st) return;
       closeUpd();
       if (st.mode === "all") {
-        upd.queue = Object.entries(upd.data.apps).filter(([, x]) => upgradable(x)).map(([n]) => n);
+        upd.queue = Object.entries(upd.data.apps).filter(([, x]) => inUpdateAll(x)).map(([n]) => n);
         nextInQueue();
-      } else startUpgrade(st.name);
+      } else startUpgrade(st.name, st.major);
     });
     $("updCancel").addEventListener("click", closeUpd);
     $("updDlg").addEventListener("click", (e) => { if (e.target === e.currentTarget) closeUpd(); });

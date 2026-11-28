@@ -171,8 +171,10 @@ def _arr_step(cfg, jobs, app):
         if status == "completed" and now - j["started"] > 120:
             # finished without a new version answering: nothing was installed (e.g. a major update
             # that needs confirming in the app itself)
-            msg = str(c.get("message") or "").strip() or "the app didn't install the update"
-            j.update(state="failed", message="{} — open {} to update it".format(msg, app.capitalize())[:300], finished=now)
+            msg = str(c.get("message") or "").strip()
+            msg = msg or "{} finished without installing the update; open {} to update it".format(app.capitalize(), app.capitalize())
+            j.update(state="failed", message=msg[:300], finished=now)
+            j.setdefault("log", []).append("{}: {}".format(time.strftime("%H:%M:%S"), msg[:300]))
             return
     if now - j["started"] > ARR_TIMEOUT:
         j.update(state="failed", message="No new version after 15 minutes; check {}".format(app.capitalize()), finished=now)
@@ -265,6 +267,9 @@ def status(cfg):
             a["notes"] = str(a["notes"] or "")[:6000]
             if not (isinstance(a["url"], str) and a["url"].startswith("https://")):
                 a["url"] = None
+            # a new major version of Sonarr/Radarr/Prowlarr (2.x -> 3.x): their updater installs it only
+            # when asked to explicitly, so the panel asks the admin separately and never in Update all
+            a["major"] = app in ARR_APPS and a["available"] and _vtuple(a["latest"])[0] > _vtuple(a["installed"])[0]
             if app in NOTIFY_ONLY:
                 a["action"] = "notify"
             elif app in ARR_APPS:
@@ -292,8 +297,9 @@ def status(cfg):
                 "busy": _busy(cfg, jobs), "cooldown": max(0, int(CHECK_COOLDOWN - (time.time() - _mem["check_at"])))}
 
 
-def upgrade(cfg, app):
-    """Start upgrading one app. Returns (ok, message)."""
+def upgrade(cfg, app, major=False):
+    """Start upgrading one app. Returns (ok, message). A new major version of Sonarr/Radarr/Prowlarr
+    is installed only with major=True (the admin confirmed that version in the dialog)."""
     if app in NOTIFY_ONLY:
         return False, "qBittorrent is built from source; update it over SSH"
     if app not in ROOT_APPS and app not in ARR_APPS:
@@ -326,11 +332,18 @@ def upgrade(cfg, app):
             return False, "{} says this update can't be installed by its updater".format(app.capitalize())
         try:
             cur = (_arr(a, app, "GET", "system/status") or {}).get("version")
+            is_major = _vtuple(info.get("latest"))[0] > _vtuple(cur or info.get("installed"))[0]
+            if is_major and not major:
+                return False, "{} {} is a new major version; confirm it in its own Update dialog".format(
+                    app.capitalize(), info.get("latest"))
             if cur and _vtuple(cur) >= _vtuple(info.get("latest")):
                 # already updated some other way since the last check: refresh instead
                 _request_check(cfg, force=True)
                 return False, "{} is already on {}; refreshing the check".format(app.capitalize(), cur)
-            c = _arr(a, app, "POST", "command", {"name": "ApplicationUpdate"}, timeout=10) or {}
+            body = {"name": "ApplicationUpdate"}
+            if is_major:
+                body["installMajorUpdate"] = True     # what the app's own "install anyway" button sends
+            c = _arr(a, app, "POST", "command", body, timeout=10) or {}
         except requests.HTTPError as e:
             return False, "{} refused the update (HTTP {})".format(app.capitalize(), getattr(e.response, "status_code", "?"))
         except (requests.RequestException, ValueError):
@@ -339,7 +352,8 @@ def upgrade(cfg, app):
         jobs[app] = {"state": "running", "message": "{} is installing the update".format(app.capitalize()),
                      "started": now, "finished": None, "from": cur, "to": info.get("latest"),
                      "command": c.get("id") if isinstance(c.get("id"), int) else None,
-                     "log": ["{}: asked {} {} to install {}".format(time.strftime("%H:%M:%S"), app.capitalize(), cur, info.get("latest"))]}
+                     "log": ["{}: asked {} {} to install {}{}".format(time.strftime("%H:%M:%S"), app.capitalize(), cur, info.get("latest"),
+                                                                      " (major version, confirmed)" if is_major else "")]}
         try:
             _write_json(_jobs_path(cfg), jobs)
         except OSError:

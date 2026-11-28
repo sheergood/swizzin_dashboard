@@ -431,7 +431,7 @@ def api_updates(user):
         if action == 'check':
             ok, msg = updates.check(app.config)
         elif action == 'upgrade':
-            ok, msg = updates.upgrade(app.config, str(data.get('app') or '')[:40])
+            ok, msg = updates.upgrade(app.config, str(data.get('app') or '')[:40], major=data.get('major') is True)
         else:
             return {"error": "unknown action"}, 400
         st = updates.status(app.config)

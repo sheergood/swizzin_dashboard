@@ -744,7 +744,7 @@ class Updates(unittest.TestCase):
         import subprocess
         here = os.path.dirname(os.path.abspath(__file__))
         cls.srv = {}
-        for mode in ("ok", "fail", "noop"):
+        for mode in ("ok", "fail", "noop", "major"):
             with socket.socket() as s:
                 s.bind(("127.0.0.1", 0))
                 port = s.getsockname()[1]
@@ -905,7 +905,7 @@ class Updates(unittest.TestCase):
             json.dump(jobs, f)
         j = self.up.status(self.cfg)["apps"]["sonarr"]["job"]
         self.assertEqual(j["state"], "failed")
-        self.assertIn("open Sonarr", j["message"])
+        self.assertIn("No update to install", j["message"])      # the app's own words
 
     def test_arr_address_must_be_local(self):
         self.write("arr.json", {"sonarr": {"url": "http://evil.example:80", "key": "s" * 32}})
@@ -935,6 +935,26 @@ class Updates(unittest.TestCase):
         self.assertFalse(ok)
         self.assertIn("already on", msg)
         self.assertEqual(self.calls_made(), ["check"])
+
+    def test_major_version_needs_its_own_confirmation(self):
+        self.arr("major")
+        self.write("updates.json", {"checked": int(time.time()), "apps": {
+            "sonarr": {"installed": "4.0.10.2544", "latest": "5.0.0.100", "available": True, "method": "self"}}})
+        a = self.up.status(self.cfg)["apps"]["sonarr"]
+        self.assertTrue(a["major"])
+        ok, msg = self.up.upgrade(self.cfg, "sonarr")                         # e.g. from Update all
+        self.assertFalse(ok)
+        self.assertIn("major version", msg)
+        ok, msg = self.up.upgrade(self.cfg, "sonarr", major=True)             # confirmed in its dialog
+        self.assertTrue(ok, msg)
+        deadline = time.time() + 10
+        while time.time() < deadline:
+            j = self.up.status(self.cfg)["apps"]["sonarr"]["job"]
+            if j["state"] != "running":
+                break
+            time.sleep(0.3)
+        self.assertEqual(j["state"], "done")
+        self.assertIn("confirmed", self.up.log(self.cfg, "sonarr"))
 
 
 class AuthLog(unittest.TestCase):

@@ -1056,3 +1056,4 @@ html[data-theme="dark"] .side-item.active, html[data-auto="obsidian"][data-theme
 .upd .vn { display: none; }
 .upd.tight .vi { display: none; }
 .upd.tight .vn { display: inline; }
+.upd.major .dot { background: var(--warn); box-shadow: 0 0 0 3px color-mix(in srgb, var(--warn) 25%, transparent); }

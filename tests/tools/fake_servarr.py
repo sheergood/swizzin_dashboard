@@ -2,7 +2,8 @@
 """Stand-in for the Sonarr/Radarr/Prowlarr built-in updater: python3 fake_servarr.py PORT MODE
 /sonarr/api/v3/... (key "s"*32) and /prowlarr/api/v1/... (key "p"*32).
 MODE ok: ApplicationUpdate makes the version 4.0.11 after a 1 s "restart" (503 meanwhile);
-fail: the command fails; noop: the command completes and nothing changes."""
+fail: the command fails; noop: the command completes and nothing changes;
+major: the new version is 5.0 and is installed only with "installMajorUpdate": true."""
 import json
 import sys
 import threading
@@ -14,7 +15,7 @@ MODE = sys.argv[2] if len(sys.argv) > 2 else "ok"
 KEYS = {"sonarr": "s" * 32, "prowlarr": "p" * 32}
 ST = {"sonarr": {"version": "4.0.10.2544", "restart_until": 0, "cmd": None},
       "prowlarr": {"version": "1.20.0.4590", "restart_until": 0, "cmd": None}}
-NEW = {"sonarr": "4.0.11.2680", "prowlarr": "1.21.0.4700"}
+NEW = {"sonarr": "5.0.0.100" if MODE == "major" else "4.0.11.2680", "prowlarr": "1.21.0.4700"}
 LOCK = threading.Lock()
 
 
@@ -66,7 +67,10 @@ class H(BaseHTTPRequestHandler):
             return self._send(400, {"message": "bad"})
         with LOCK:
             s = ST[app]
-            if MODE == "ok":
+            if MODE == "major" and body.get("installMajorUpdate") is not True:
+                s["cmd"] = {"id": 41, "status": "completed",
+                            "message": "Unable to install major update, please update update manually from System: Updates"}
+            elif MODE in ("ok", "major"):
                 s["cmd"] = {"id": 41, "status": "started"}
                 s["version"], s["restart_until"] = NEW[app], time.time() + 1
             elif MODE == "fail":
