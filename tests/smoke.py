@@ -57,11 +57,11 @@ with swizzin.app.test_request_context("/", headers=auth):
 # preferences: own XHR only, allowlisted keys and values only
 checks.append(("POST /api/prefs without XHR", client.post("/api/prefs", headers=auth, json={"sky": "night"}).status_code, 403))
 r = client.post("/api/prefs", headers=xhr, json={"sky": "night", "skytheme": "nordic", "evil": "<x>", "FLASK_SECRET": "x"})
-checks.append(("POST /api/prefs keeps allowed keys", r.get_json(), {"sky": "night", "skytheme": "nordic"}))
-r = client.post("/api/prefs", headers=xhr, json={"skytheme": "../../etc/passwd"})
-checks.append(("POST /api/prefs ignores bad values", r.get_json(), {"sky": "night", "skytheme": "nordic"}))
+checks.append(("POST /api/prefs keeps allowed keys", r.get_json(), {"sky": "night"}))
+r = client.post("/api/prefs", headers=xhr, json={"sky": "../../etc/passwd"})
+checks.append(("POST /api/prefs ignores bad values", r.get_json(), {"sky": "night"}))
 checks.append(("POST /api/prefs junk body", client.post("/api/prefs", headers=xhr, data="not json").status_code, 200))
-checks.append(("page carries saved prefs", b'"skytheme": "nordic"' in client.get("/", headers=auth).data, True))
+checks.append(("page carries saved prefs", b'"sky": "night"' in client.get("/", headers=auth).data, True))
 # service control: own XHR only, known actions only
 checks.append(("POST /apps/service without XHR", client.post("/apps/service", headers=auth, json={"application": "panel", "function": "restart"}).status_code, 403))
 checks.append(("POST /apps/service bad action", client.post("/apps/service", headers=xhr, json={"application": "panel", "function": "mask"}).status_code, 400))

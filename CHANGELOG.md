@@ -3,6 +3,15 @@
 Fork of [liaralabs/swizzin_dashboard](https://github.com/liaralabs/swizzin_dashboard), tuned for
 seedbox servers. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [sheergood-16] — Nov 28 2026
+
+### Removed
+- **The other sky themes** (Teal Sky, Glacier, Aurora, Sand & Sea, Graphite, Monsoon, Lotus,
+  Nordic, Ember) and the sky-theme picker in the user menu and command palette. There are now
+  three themes: **Auto** (Obsidian & Porcelain, following the sun), **Light** (Porcelain) and
+  **Dark** (Obsidian). A sky theme saved earlier in a browser or on the server is ignored and
+  cleared; Auto/Light/Dark choices are kept.
+
 ## [sheergood-15] — Nov 28 2026
 
 ### Changed

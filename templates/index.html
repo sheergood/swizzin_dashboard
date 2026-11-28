@@ -9,7 +9,7 @@
        paint so nothing flashes (Auto remembers whether it was last showing the light or the dark look) */
     try { var P = {{ prefs|tojson }};
       if (P.sky) localStorage.setItem("swz.sky", P.sky);
-      if (P.skytheme) localStorage.setItem("swz.skytheme", P.skytheme);
+      localStorage.removeItem("swz.skytheme");   // sky themes were removed; Auto is Obsidian & Porcelain
       var m = localStorage.getItem("swz.sky"), last = localStorage.getItem("swz.lasttheme");
       document.documentElement.dataset.theme = m === "day" ? "light" : m === "night" ? "dark" : last === "light" ? "light" : "sky";
       localStorage.removeItem("swz.compact"); } catch (e) {}</script>
@@ -79,7 +79,6 @@
             <button role="radio" data-skymode="day" title="Clean light theme with frosted glass">Light</button>
             <button role="radio" data-skymode="night" title="Slate dark theme with frosted glass">Dark</button>
           </div>
-          <div class="sky-themes" id="skyThemes" role="radiogroup" aria-label="Auto sky theme"></div>
           <div class="muted menu-sky-src" id="skySrc"></div>
         </div>
         <hr>

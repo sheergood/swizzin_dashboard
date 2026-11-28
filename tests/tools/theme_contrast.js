@@ -20,7 +20,6 @@ SKY.init({});
 let worst = {};
 const DARK = { ink: "#f3f5fa", ink2: "#c4ccdd", ink3: "#9aa5bd" }, LIGHT = { ink: "#0e1525", ink2: "#344055", ink3: "#55627a" };
 for (const t of SKY.themes()) {
-  SKY.setTheme(t.key);
   for (let el = -30; el <= 70; el += 1) for (const evening of [false, true]) {
     // drive apply() through a fixed elevation by faking the sun
     SKY.sunElevation = null;
@@ -31,7 +30,6 @@ const lat = 52.37, lon = 4.9;
 store["swz.loc.lat"] = String(lat); store["swz.loc.lon"] = String(lon); store["swz.loc.src"] = "device";
 const realDate = Date;
 for (const t of SKY.themes()) {
-  SKY.setTheme(t.key);
   let w = { ink: 99, ink2: 99, ink3: 99 }, wl = { ink: 99, ink2: 99, ink3: 99 }, flips = 0, lastLight = null;
   for (const day of ["2026-06-21", "2026-12-21", "2026-03-20"]) for (let m = 0; m < 1440; m += 10) {
     const T = new realDate(day + "T00:00:00Z").getTime() + m * 60000;

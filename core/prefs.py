@@ -13,7 +13,6 @@ _lock = threading.Lock()
 
 ALLOWED = {
     "sky": {"auto", "day", "night"},
-    "skytheme": {"obsidian", "teal", "glacier", "aurora", "sandsea", "graphite", "monsoon", "lotus", "nordic", "ember"},
 }
 MAX_USERS = 500
 
