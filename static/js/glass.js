@@ -66,7 +66,7 @@
   const hideTip = () => { tip.hidden = true; };
 
   // fail2ban jails swizzin sets up, in plain words (any other jail keeps its own name)
-  const JAILS = { sshd: "SSH", "swizzin-panel": "panel login", "swizzin-nginx-auth": "app login", "swizzin-scan": "scanner" };
+  const JAILS = { sshd: "SSH", "swizzin-panel": "panel login", "swizzin-nginx-auth": "app login", "swizzin-filebrowser": "file login", "swizzin-scan": "scanner" };
   const jailName = (n) => JAILS[n] || n;
 
   let toastTimer;

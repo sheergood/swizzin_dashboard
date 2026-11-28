@@ -17,7 +17,8 @@ seedbox servers. Format follows [Keep a Changelog](https://keepachangelog.com/en
     first visit before the browser asks).
   - The log moves to `auth.log.1` at 1 MB. If the log can't be written, the login just fails as
     before.
-- Security card: swizzin's jails have plain names (SSH, panel login, app login, scanner).
+- Security card: swizzin's jails have plain names (SSH, panel login, app login, file login,
+  scanner).
 
 ### Checked
 - Unit tests:
