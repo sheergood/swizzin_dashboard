@@ -3,6 +3,19 @@
 Fork of [liaralabs/swizzin_dashboard](https://github.com/liaralabs/swizzin_dashboard), tuned for
 seedbox servers. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [sheergood-18] — Nov 28 2026
+
+### Fixed
+- Toggle switches: the hidden checkbox inside each switch was positioned against the whole card
+  (same kind of bug as the stray uptime dot), so keyboard focus landed at the card's corner. It
+  now sits exactly on its switch; clicks and keyboard work as before.
+
+### Checked
+- Layout sweep (`tests/tools/layout_sweep.py`) at phone, tablet, laptop, 1440p and 4K in Auto,
+  Light and Dark, opening the specs popover, menu, command palette and every traffic view: no
+  script errors, no sideways scrolling, nothing outside its card, nothing pinned to a card by
+  mistake. Static analysis (pyflakes) of the panel's Python: no undefined names or real errors.
+
 ## [sheergood-17] — Nov 28 2026
 
 ### Fixed

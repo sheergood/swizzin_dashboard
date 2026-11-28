@@ -185,7 +185,8 @@ html[data-side="mini"] .side-item, html[data-side="mini"] .side-toggle { justify
 .row-toggle { display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; cursor: pointer; gap: 14px; }
 
 /* switch */
-.row-toggle input, .switch input { position: absolute; opacity: 0; pointer-events: none; }
+.row-toggle input, .switch input { position: absolute; opacity: 0; pointer-events: none; inset: 0; width: 100%; height: 100%; margin: 0; }
+.row-toggle { position: relative; }
 .row-toggle i, .switch i { width: 38px; height: 22px; border-radius: 999px; background: rgba(255,255,255,.14); position: relative;
   transition: background .25s; flex: none; box-shadow: inset 0 1px 2px rgba(0,0,0,.35); }
 .row-toggle i::after, .switch i::after { content: ""; position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%;
@@ -577,7 +578,7 @@ a.app-name:hover { text-decoration: underline; text-underline-offset: 3px; }
 .icon-btn:hover { background: rgba(255,255,255,.14); }
 .icon-btn.spin { animation: spin .9s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
-.switch { display: inline-flex; cursor: pointer; }
+.switch { display: inline-flex; cursor: pointer; position: relative; }   /* keeps its hidden checkbox inside it */
 
 /* overlays */
 .tooltip { position: fixed; z-index: 50; pointer-events: none; padding: 9px 12px; border-radius: 12px; font-size: 12.5px;
