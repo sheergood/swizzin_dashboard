@@ -13,6 +13,8 @@ from itsdangerous import BadSignature
 from authlib.jose import JsonWebSignature as Serializer
 from passlib.apache import HtpasswdFile
 
+from core import authlog
+
 
 log = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
@@ -84,9 +86,13 @@ class HtPasswdAuth:
             username, password
         )
         if not valid:
-            user_ip = request.environ['REMOTE_ADDR']
+            user_ip = request.environ.get('REMOTE_ADDR')
             log.warning('Invalid login from %s at %s'%(username, user_ip))
             valid = False
+            try:   # for fail2ban (swizzin-panel jail); never lets a logging problem break the login
+                authlog.failed(user_ip, username, password, current_app.config.get('AUTH_LOG'))
+            except Exception:
+                pass
         return (
             valid,
             username

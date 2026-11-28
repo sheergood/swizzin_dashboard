@@ -935,3 +935,51 @@ class Updates(unittest.TestCase):
         self.assertFalse(ok)
         self.assertIn("already on", msg)
         self.assertEqual(self.calls_made(), ["check"])
+
+
+class AuthLog(unittest.TestCase):
+    """Wrong panel passwords for fail2ban: only time + address, deduplicated, never loopback."""
+    def setUp(self):
+        import core.authlog as al
+        self.al = al
+        al._seen.clear()
+        self.d = tempfile.mkdtemp()
+        self.path = os.path.join(self.d, "auth.log")
+
+    def lines(self):
+        try:
+            with open(self.path) as f:
+                return f.read().splitlines()
+        except OSError:
+            return []
+
+    def test_line_has_only_time_and_address(self):
+        self.assertTrue(self.al.failed("203.0.113.7", 'evil"\nfrom 1.2.3.4', "pw", self.path))
+        ln = self.lines()
+        self.assertEqual(len(ln), 1)
+        self.assertRegex(ln[0], r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d[+-]\d{4} swizzin-panel: login failed from 203\.0\.113\.7$")
+
+    def test_same_attempt_counts_once_but_guesses_add_up(self):
+        for _ in range(20):                                   # a browser re-sending a stale saved password
+            self.al.failed("203.0.113.7", "prateek", "old", self.path)
+        self.assertEqual(len(self.lines()), 1)
+        for i in range(8):                                    # guessing
+            self.al.failed("203.0.113.7", "prateek", "guess%d" % i, self.path)
+        self.assertEqual(len(self.lines()), 9)
+
+    def test_loopback_and_junk_are_not_written(self):
+        for ip in ("127.0.0.1", "::1", "", None, "not-an-ip", "1.2.3.4, 5.6.7.8"):
+            self.assertFalse(self.al.failed(ip, "u", "p", self.path))
+        self.assertEqual(self.lines(), [])
+        self.assertTrue(self.al.failed("::ffff:198.51.100.2", "u", "p", self.path))
+        self.assertTrue(self.lines()[0].endswith("from 198.51.100.2"))
+
+    def test_no_jail_no_log(self):
+        self.assertFalse(self.al.failed("203.0.113.7", "u", "p", os.path.join(self.d, "missing", "auth.log")))
+
+    def test_rotates_when_big(self):
+        with open(self.path, "w") as f:
+            f.write("x" * (self.al.MAX_BYTES + 10))
+        self.al.failed("203.0.113.8", "u", "p", self.path)
+        self.assertTrue(os.path.exists(self.path + ".1"))
+        self.assertEqual(len(self.lines()), 1)

@@ -65,6 +65,10 @@
   }
   const hideTip = () => { tip.hidden = true; };
 
+  // fail2ban jails swizzin sets up, in plain words (any other jail keeps its own name)
+  const JAILS = { sshd: "SSH", "swizzin-panel": "panel login", "swizzin-nginx-auth": "app login", "swizzin-scan": "scanner" };
+  const jailName = (n) => JAILS[n] || n;
+
   let toastTimer;
   function toast(msg) {
     const t = $("toast"); t.textContent = msg; t.hidden = false;
@@ -918,14 +922,14 @@
     const failed = d.jails.reduce((a, j) => a + j.currently_failed, 0);
     $("f2bStats").innerHTML = [["Banned now", d.banned_now ?? 0], ["Bans 24 h", d.bans_24h], ["Bans 7 d", d.bans_7d], ["Failing now", failed]]
       .map(([k, v]) => `<div class="metric"><small>${k}</small><b>${v}</b></div>`).join("");
-    $("f2bJails").textContent = d.jails.map((j) => `${j.name} ${j.currently_banned}`).join(" · ");
+    $("f2bJails").textContent = d.jails.map((j) => `${jailName(j.name)} ${j.currently_banned}`).join(" · ");
     renderBanCountries(d.countries);
     $("f2bList").innerHTML = d.recent.length ? d.recent.slice(0, 25).map((b) => {
       const left = b.active && b.bantime > 0 ? b.time + b.bantime - nowS : null;
       const status = b.active ? (b.bantime < 0 ? "Banned forever" : left > 0 ? `Banned · ${dur(left)} left` : "Banned") : "Expired";
       return `<div class="ban"><code title="${esc(b.ip)}${b.cc ? " · " + esc(countryName(b.cc)) : ""}">${b.cc ? flagHTML(b.cc, countryName(b.cc)) : ""}${esc(b.ip)}</code>
         <span class="when" title="${new Date(b.time * 1000).toLocaleString()}">${ago(nowS - b.time)}</span>
-        <span class="meta"><span class="jail">${esc(b.jail)}</span>${b.failures ? b.failures + " failures" : ""}${b.count > 1 ? ` · ban #${b.count}` : ""}</span>
+        <span class="meta"><span class="jail" title="${esc(b.jail)}">${esc(jailName(b.jail))}</span>${b.failures ? b.failures + " failures" : ""}${b.count > 1 ? ` · ban #${b.count}` : ""}</span>
         <span class="st ${b.active ? "on" : "off"}">${status}</span></div>`;
     }).join("") : `<div class="empty">No bans recorded yet</div>`;
   }

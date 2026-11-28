@@ -3,6 +3,32 @@
 Fork of [liaralabs/swizzin_dashboard](https://github.com/liaralabs/swizzin_dashboard), tuned for
 seedbox servers. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [sheergood-20] — Nov 28 2026
+
+### Added
+- **Wrong panel passwords are logged for fail2ban.** They go to
+  `/var/log/swizzin-panel/auth.log`, which swizzin sheergood-12's `swizzin-panel` jail reads.
+  - Each line holds only the time and the address. The login name and anything else the visitor
+    typed is never written, so nobody can make the log point at someone else's address.
+  - The same address, login and password are written at most once per 10 minutes. A browser
+    that keeps re-sending an old saved password after a password change counts once; only
+    guessing different passwords adds up to a ban.
+  - Never written: the server itself (loopback), and requests without a password (the normal
+    first visit before the browser asks).
+  - The log moves to `auth.log.1` at 1 MB. If the log can't be written, the login just fails as
+    before.
+- Security card: swizzin's jails have plain names (SSH, panel login, app login, scanner).
+
+### Checked
+- Unit tests:
+  - the line format, including a login name with a line break and an injected address;
+  - repeats counted once, while guesses add up;
+  - loopback, junk and IPv4-mapped addresses;
+  - no log without the jail;
+  - rotation.
+- End to end: wrong logins at a test panel produce lines that swizzin's real fail2ban filter
+  matches, and a test fail2ban server bans after 8.
+
 ## [sheergood-19] — Nov 28 2026
 
 ### Added
