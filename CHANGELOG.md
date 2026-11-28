@@ -3,6 +3,27 @@
 Fork of [liaralabs/swizzin_dashboard](https://github.com/liaralabs/swizzin_dashboard), tuned for
 seedbox servers. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [sheergood-23] — Nov 28 2026
+
+### Fixed
+- **Security card said "updated 20785 d ago"**, and ban times and the speed test's "… ago" were
+  wrong too. The update feature (sheergood-19) added a second `ago()` that took a timestamp
+  instead of an age in seconds, and it silently replaced the first one everywhere. The new one
+  is now `agoTs()`.
+  - CI now fails if a script declares the same function name twice
+    (`tests/tools/dup_functions.js`).
+
+### Added
+- **Failing now: which addresses.** A "Failing now" list on the Security card shows each address
+  with a failed login that hasn't reached the ban limit yet, with:
+  - the country flag;
+  - the jail (SSH, panel login, …);
+  - "2 of 5 tries before a ban";
+  - when it last failed.
+
+  The number tile's tooltip lists them too. This needs swizzin sheergood-14's collector; until
+  then the list just stays hidden.
+
 ## [sheergood-22] — Nov 28 2026
 
 ### Added

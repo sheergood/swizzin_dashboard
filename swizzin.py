@@ -349,9 +349,14 @@ def api_fail2ban(user):
                 tally[b.get("ip")] = tally.get(b.get("ip"), 0) + 1
             counts = list(tally.items())
         counts = [(c[0], int(c[1])) for c in counts[:500] if isinstance(c, (list, tuple)) and len(c) == 2]
-        cc = ipcountry.countries({ip for ip, _ in counts} | {b.get("ip") for b in recent}, app.config)
+        failing = d.get("failing") if isinstance(d.get("failing"), list) else []
+        cc = ipcountry.countries({ip for ip, _ in counts} | {b.get("ip") for b in recent} |
+                                 {f.get("ip") for f in failing if isinstance(f, dict)}, app.config)
         for b in recent:
             b["cc"] = cc.get(b.get("ip"))
+        for f in failing:
+            if isinstance(f, dict):
+                f["cc"] = cc.get(f.get("ip"))
         top, other, unknown = ipcountry.summarize(counts, cc)
         d["countries"] = {"top": top, "other": other, "unknown": unknown, "window": window,
                           "lookups": bool(app.config.get("PLACE_LOOKUPS", True))}

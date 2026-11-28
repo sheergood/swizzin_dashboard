@@ -923,6 +923,16 @@
     $("f2bStats").innerHTML = [["Banned now", d.banned_now ?? 0], ["Bans 24 h", d.bans_24h], ["Bans 7 d", d.bans_7d], ["Failing now", failed]]
       .map(([k, v]) => `<div class="metric"><small>${k}</small><b>${v}</b></div>`).join("");
     $("f2bJails").textContent = d.jails.map((j) => `${jailName(j.name)} ${j.currently_banned}`).join(" · ");
+    // which addresses are behind "Failing now" (collector sheergood-14 and later)
+    const failing = Array.isArray(d.failing) ? d.failing : [];
+    $("f2bFailWrap").hidden = !failing.length;
+    $("f2bFailing").innerHTML = failing.slice(0, 25).map((f) => `<div class="ban"><code title="${esc(f.ip)}${f.cc ? " · " + esc(countryName(f.cc)) : ""}">${f.cc ? flagHTML(f.cc, countryName(f.cc)) : ""}${esc(f.ip)}</code>
+        <span class="when" title="${new Date(f.last * 1000).toLocaleString()}">${ago(nowS - f.last)}</span>
+        <span class="meta"><span class="jail" title="${esc(f.jail)}">${esc(jailName(f.jail))}</span>${f.count} of ${f.maxretry} tries before a ban</span>
+        <span class="st off">Watching</span></div>`).join("");
+    const fTile = $("f2bStats").querySelectorAll(".metric")[3];
+    if (fTile) fTile.title = failing.length ? failing.map((f) => `${f.ip} · ${jailName(f.jail)} · ${f.count}/${f.maxretry}`).join("\n")
+      : "Addresses with a failed login that haven't reached the ban limit";
     renderBanCountries(d.countries);
     $("f2bList").innerHTML = d.recent.length ? d.recent.slice(0, 25).map((b) => {
       const left = b.active && b.bantime > 0 ? b.time + b.bantime - nowS : null;
@@ -1338,7 +1348,7 @@
     if (j && j.state === "failed")
       return { cls: "fail", html: `<span class="dot"></span><span class="uv" title="${esc(j.message || "")}">Update failed</span><button class="ghost" type="button" data-upd="log">Log</button>${upgradable(a) ? `<button class="go" type="button" data-upd="go" ${busy ? "disabled" : ""}>Retry</button>` : ""}` };
     if (j && j.state === "done")
-      return { cls: "done", html: `<span class="dot"></span><span class="uv" title="${esc(vtxt(a.installed))}${j.finished ? " · " + esc(ago(j.finished)) : ""}">Updated to <b>${esc(vtxt(vshort(a.installed)))}</b></span><button class="ghost" type="button" data-upd="log">Log</button>` };
+      return { cls: "done", html: `<span class="dot"></span><span class="uv" title="${esc(vtxt(a.installed))}${j.finished ? " · " + esc(agoTs(j.finished)) : ""}">Updated to <b>${esc(vtxt(vshort(a.installed)))}</b></span><button class="ghost" type="button" data-upd="log">Log</button>` };
     if (!a.installed && a.error) return { cls: "err", html: `<span class="dot"></span><span class="uv" title="${esc(a.error)}">Couldn't check for updates</span>` };
     if (!a.available) return { cls: "ok", html: `<span class="dot"></span><span class="uv"${a.error ? ` title="Last check failed: ${esc(a.error)}"` : ""}>Up to date · <b title="${esc(vtxt(a.installed))}">${esc(vtxt(vshort(a.installed)))}</b></span>` };
     if (a.action === "notify")
@@ -1363,7 +1373,8 @@
     let fitT;
     new ResizeObserver(() => { clearTimeout(fitT); fitT = setTimeout(fitUpdRows, 80); }).observe($("apps"));
   }
-  function ago(t) {
+  // "x min ago" from a unix time (the other ago() above takes an age in seconds)
+  function agoTs(t) {
     const m = Math.max(0, Math.round((Date.now() / 1000 - t) / 60));
     return m < 1 ? "just now" : m < 60 ? `${m} min ago` : m < 1440 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} d ago`;
   }
@@ -1394,7 +1405,7 @@
     all.hidden = ready.length < 2 && !upd.queue.length;
     all.disabled = !!d.busy || !!upd.queue.length;
     all.textContent = upd.queue.length ? `Updating… (${upd.queue.length} left)` : `Update all (${ready.length})`;
-    const sum = $("svcSummary"), extra = d.checked ? ` · updates checked ${ago(d.checked)}` : "";
+    const sum = $("svcSummary"), extra = d.checked ? ` · updates checked ${agoTs(d.checked)}` : "";
     sum.dataset.upd = extra;
     sum.textContent = sum.textContent.replace(/ · updates checked .*$/, "") + extra;
   }
