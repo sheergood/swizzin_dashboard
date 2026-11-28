@@ -18,7 +18,7 @@ const cr = (a, b) => { const x = L(a), y = L(b); return (Math.max(x, y) + .05) /
 const over = (c, top, a) => c.map((v, i) => v + (top[i] - v) * a);
 SKY.init({});
 let worst = {};
-const DARK = { ink: "#f3f5fa", ink2: "#c4ccdd", ink3: "#9aa5bd" }, LIGHT = { ink: "#18212c", ink2: "#3f4a5a", ink3: "#5b6677" };
+const DARK = { ink: "#f3f5fa", ink2: "#c4ccdd", ink3: "#9aa5bd" }, LIGHT = { ink: "#0e1525", ink2: "#344055", ink3: "#55627a" };
 for (const t of SKY.themes()) {
   SKY.setTheme(t.key);
   for (let el = -30; el <= 70; el += 1) for (const evening of [false, true]) {
@@ -47,7 +47,7 @@ for (const t of SKY.themes()) {
     let glass;
     const inks = light ? LIGHT : DARK;
     for (const c of cands) {
-      if (light) glass = over(c, [255, 255, 255], .64);                     // light frosted glass (weakest stop)
+      if (light) glass = over(c, [255, 255, 255], .56);                     // Porcelain frosted glass (weakest stop)
       else { const tint = parseFloat(props["--glass-tint"]), trgb = props["--glass-tint-rgb"].split(",").map(Number);
         glass = over(over(c, trgb, tint), [255, 255, 255], .09); }
       for (const k of ["ink", "ink2", "ink3"]) { const W = light ? wl : w; W[k] = Math.min(W[k], cr(hex(inks[k]), glass)); }

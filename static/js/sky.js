@@ -59,8 +59,9 @@
      for the frosted glass to refract. Pages that only style for skies pass init({ themes: false }) and
      get the bright-day / night sky instead. */
   const THEMES = {
-    day: { top: "#f6f8fb", mid: "#eff3f7", low: "#e7edf3", g1: "#b9e5cd", g2: "#cddbff", g3: "#bcebe4", g4: "#fde0bd", stars: 0, tint: 0 },
-    night: { top: "#121a23", mid: "#17212b", low: "#1b2632", g1: "#1c4152", g2: "#28325e", g3: "#15493f", g4: "#33294d", stars: 0, tint: 0 },
+    // Light = Porcelain, Dark = Obsidian
+    day: { top: "#f5f2ee", mid: "#eef0f6", low: "#e8edf6", g1: "#ffc9a8", g2: "#cfc4ff", g3: "#b4ead8", g4: "#ffe2a0", stars: 0, tint: 0 },
+    night: { top: "#030305", mid: "#06060a", low: "#0a0912", g1: "#3a1c96", g2: "#0b6d78", g3: "#6a1752", g4: "#18308f", stars: 0, tint: 0 },
   };
   /* Sky themes for Auto. Each gives a night, a twilight and a day sky (top/mid/low gradient + four
      glows) and an accent for dark and for light surfaces; the eight elevation stops are built from
@@ -71,6 +72,10 @@
   const mix = (a, b, t) => { const A = hex(a), B = hex(b); return "#" + A.map((v, i) => Math.round(v + (B[i] - v) * t).toString(16).padStart(2, "0")).join(""); };
   const P7 = (top, mid, low, g1, g2, g3, g4) => ({ top, mid, low, g1, g2, g3, g4 });
   const SKIES = {
+    obsidian: { name: "Obsidian & Porcelain", note: "black glass at night · white frost by day", accent: ["#b69cff", "#2563eb"], lightDay: true,
+      night: P7("#030305", "#06060a", "#0a0912", "#3a1c96", "#0b6d78", "#6a1752", "#18308f"),
+      twi: P7("#1b1636", "#4a3a6e", "#e8b9a6", "#6b4fc0", "#e0937a", "#3f8f9a", "#ffd2a8"),
+      day: P7("#f5f2ee", "#eef0f6", "#e8edf6", "#ffc9a8", "#cfc4ff", "#b4ead8", "#ffe2a0") },
     teal: { name: "Teal Sky", note: "teal on navy · blue sky", accent: ["#5eead4", "#0f9488"], stops: STOPS },
     glacier: { name: "Glacier", note: "icy cyan on deep ocean · crisp morning sky", accent: ["#67e8f9", "#0284c7"], lightDay: true,
       night: P7("#020a14", "#04182a", "#062a3e", "#0b4f6e", "#12345e", "#0a5c66", "#1b2f55"),
@@ -108,14 +113,14 @@
   const KEYS7 = ["top", "mid", "low", "g1", "g2", "g3", "g4"];
   const blend = (a, b, t) => { const o = {}; for (const k of KEYS7) o[k] = mix(a[k], b[k], t); return o; };
   function stopsFor(key) {
-    const th = SKIES[key] || SKIES.teal;
+    const th = SKIES[key] || SKIES.obsidian;
     if (th.stops) return th.stops;
     const n = th.night, w = th.twi, d = th.day, deep = blend(n, P7("#000000", "#000000", "#000000", "#000000", "#000000", "#000000", "#000000"), .25);
     const golden = blend(w, d, .3); golden.low = mix(w.low, d.low, .15);
     const at = [deep, n, blend(n, w, .45), w, golden, blend(w, d, .75), d, d];
     return th.stops = STOPS.map((b, i) => Object.assign({}, at[i], { e: b.e, stars: b.stars, tint: b.tint }));
   }
-  const themeNow = () => { const t = store.get("skytheme", "teal"); return SKIES[t] ? t : "teal"; };
+  const themeNow = () => { const t = store.get("skytheme", "obsidian"); return SKIES[t] ? t : "obsidian"; };
   const LIGHT_INK_AT = 6;      // sun elevation (°) above which lightDay themes use dark text
   const STARS_BY_DAY = .5;     // the constellation never disappears: by day it is a faint line drawing
   let useThemes = true;
@@ -164,7 +169,7 @@
     return hi;
   }
 
-  let current = { elevation: 0, phase: "", stars: 1, starAlpha: 1, starRgb: "140,170,255", source: "timezone", mode: "auto", theme: "teal", ink: "light" };
+  let current = { elevation: 0, phase: "", stars: 1, starAlpha: 1, starRgb: "140,170,255", source: "timezone", mode: "auto", theme: "obsidian", ink: "light" };
   const rgbOf = (h) => hex(h).join(",");
   function apply() {
     const mode = modeNow(), loc = location(), now = new Date(), tkey = themeNow(), th = SKIES[tkey];
@@ -311,7 +316,7 @@
       if (started) apply();
     },
     setMode(m) { store.set("sky", m === "day" || m === "night" ? m : "auto"); if (started) apply(); },
-    setTheme(t) { store.set("skytheme", SKIES[t] ? t : "teal"); if (started) apply(); },
+    setTheme(t) { store.set("skytheme", SKIES[t] ? t : "obsidian"); if (started) apply(); },
     theme: themeNow,
     themes: () => Object.keys(SKIES).map((k) => {
       const st = stopsFor(k), n = st[1], d = st[6];

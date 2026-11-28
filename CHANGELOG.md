@@ -3,6 +3,23 @@
 Fork of [liaralabs/swizzin_dashboard](https://github.com/liaralabs/swizzin_dashboard), tuned for
 seedbox servers. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [sheergood-15] — Nov 28 2026
+
+### Changed
+- **Light is now Porcelain**: white frosted glass (36 px blur) over soft peach, lilac and mint
+  light, graphite text, cobalt accent, deep soft shadows; the selected menu item is a white pill.
+- **Dark is now Obsidian**: near-black glass (44 px blur) with an iridescent violet-to-cyan rim
+  over a slow violet / teal / magenta glow; violet accent, violet-to-cyan selected item.
+- **Auto's new default sky theme, "Obsidian & Porcelain"**: Obsidian at night, a violet-to-peach
+  dusk and dawn, Porcelain once the sun is 6° up — following the real sun like the others. The
+  nine other sky themes stay in the picker, and every theme with a pale day now uses the
+  Porcelain glass by day. Contrast sweep (3 days per theme): main text at least 11.8:1 on
+  Porcelain, the dark side keeps the sky engine's guarantee.
+- Every theme: larger, tighter headline numbers, more open section labels, cards lift slightly on
+  hover (not with reduced motion).
+- Login page: Porcelain card and cobalt Sign in on Light; Obsidian card with the iridescent rim and
+  violet Sign in on Dark.
+
 ## [sheergood-14] — Nov 28 2026
 
 ### Fixed

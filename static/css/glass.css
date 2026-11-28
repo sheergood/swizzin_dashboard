@@ -644,62 +644,75 @@ a.app-name:hover { text-decoration: underline; text-underline-offset: 3px; }
 .hw-note code { font-size: 11.5px; padding: 1px 6px; border-radius: 6px; background: rgba(var(--hl), .07); }
 
 /* ================================================================ themes
-   Auto ("sky") is the living sky above. Light and Dark are calm, fixed themes in the spirit of a clean
-   admin console (white/slate surfaces, green accent), still built from frosted, refracting glass. */
+   Auto ("sky") is the living sky above. Light is Porcelain: white frosted glass over soft pastel
+   light. Dark is Obsidian: near-black glass with an iridescent rim over a slow violet / teal /
+   magenta glow. Auto's default sky theme runs from Obsidian at night to Porcelain by day. */
 html[data-theme="light"] {
   color-scheme: light;
-  --bg: #eff3f7;
+  --bg: #f1f2f6;
   --hl: 15, 23, 42;
-  --ink: #18212c; --ink-2: #3f4a5a; --ink-3: #5b6677;
-  --line: rgba(15, 23, 42, .09);
-  --glass-fill: linear-gradient(135deg, rgba(255,255,255,.80) 0%, rgba(255,255,255,.64) 48%, rgba(255,255,255,.74) 100%);
-  --glass-blur: 22px;
+  --ink: #0e1525; --ink-2: #344055; --ink-3: #55627a;
+  --line: rgba(15, 23, 42, .07);
+  --glass-fill: linear-gradient(160deg, rgba(255,255,255,.76) 0%, rgba(255,255,255,.56) 48%, rgba(255,255,255,.66) 100%);
+  --glass-blur: 36px;
+  --radius: 26px;
   --grid: rgba(15, 23, 42, .07); --grid-strong: rgba(15, 23, 42, .18); --cursor: rgba(15, 23, 42, .35);
-  --surface-solid: rgba(255,255,255,.97); --knob-ring: #ffffff; --well: rgba(15,23,42,.045);
-  --accent: #16a34a; --accent-soft: #e6f6ec; --accent-ink: #157a3a;
+  --surface-solid: rgba(255,255,255,.97); --knob-ring: #ffffff; --well: rgba(15,23,42,.04);
+  --accent: #2563eb; --accent-soft: rgba(37,99,235,.10); --accent-ink: #1d4fd8;
   /* data roles: the light-surface steps of the same hues */
   --s1: #2272d6; --s2: #cc5a14; --s3: #0b8a71;   /* validated on #e3e7ec .. #f6f8fb */
   --good: #16a34a; --warn: #c98a00; --serious: #d9682f; --crit: #d23435;
 }
 html[data-theme="dark"] {
-  --bg: #141c25;
-  --ink: #e9eef4; --ink-2: #c0cad6; --ink-3: #95a1b1;
+  --bg: #030305;
+  --ink: #f6f6f8; --ink-2: #c9c9d4; --ink-3: #9d9dac;
   --line: rgba(255, 255, 255, .07);
-  --glass-fill: linear-gradient(135deg, rgba(36,50,64,.72) 0%, rgba(28,39,51,.66) 48%, rgba(32,45,58,.7) 100%);
-  --surface-solid: rgba(29,40,52,.98); --knob-ring: #1d2834;
-  --accent: #22c55e; --accent-soft: rgba(34,197,94,.13); --accent-ink: #6ee7a0;
+  --surface-solid: rgba(16,15,24,.98); --knob-ring: #0d0c14;
+  --accent: #b69cff; --accent-soft: rgba(160,130,255,.16); --accent-ink: #cbb8ff;
   --good: #22c55e;
 }
-/* glass on calm themes: softer shadows, and on Light a visible hairline because white-on-white has no rim */
+/* Obsidian glass: Dark, and Auto's Obsidian & Porcelain theme while it's dark outside */
+html[data-theme="dark"], html[data-auto="obsidian"][data-theme="sky"] {
+  --glass-fill: linear-gradient(160deg, rgba(255,255,255,.08) 0%, rgba(255,255,255,.025) 42%, rgba(255,255,255,.045) 100%);
+  --glass-blur: 44px;
+  --radius: 24px;
+}
+html[data-theme="dark"] .glass, html[data-auto="obsidian"][data-theme="sky"] .glass {
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.16), inset 0 0 0 1px rgba(255,255,255,.035),
+    0 2px 3px rgba(0,0,0,.4), 0 40px 90px -36px rgba(0,0,0,.95);
+}
+html[data-theme="dark"] .glass::before, html[data-auto="obsidian"][data-theme="sky"] .glass::before {
+  background: linear-gradient(130deg, rgba(255,255,255,.55), rgba(182,156,255,.28) 22%, rgba(255,255,255,.03) 48%,
+    rgba(56,214,238,.22) 82%, rgba(255,255,255,.3));
+}
+html[data-theme="dark"] .blob, html[data-auto="obsidian"][data-theme="sky"] .blob { opacity: .8; filter: blur(90px); }
+html[data-theme="dark"] .side-item.active, html[data-auto="obsidian"][data-theme="sky"] .side-item.active {
+  background: linear-gradient(120deg, rgba(150,120,255,.26), rgba(40,200,230,.12)); box-shadow: inset 0 0 0 1px rgba(190,170,255,.28); color: var(--ink); }
+html[data-theme="dark"] .side-item.active .side-ico, html[data-auto="obsidian"][data-theme="sky"] .side-item.active .side-ico {
+  background: linear-gradient(135deg, #8b6cff, #22c3e6); color: #fff; box-shadow: 0 6px 18px -6px rgba(139,108,255,.8); }
+/* Porcelain glass: Light, and every Auto theme with a pale day while the sun is up */
 html[data-theme="light"] .glass {
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.95), inset 0 0 0 1px rgba(15,23,42,.06),
-    0 1px 2px rgba(15,23,42,.05), 0 10px 30px -14px rgba(15,23,42,.18);
+  box-shadow: inset 0 1px 0 #fff, inset 0 0 0 1px rgba(255,255,255,.55), 0 1px 1px rgba(15,23,42,.04),
+    0 12px 24px -16px rgba(30,41,80,.14), 0 36px 70px -36px rgba(30,41,80,.3);
 }
-html[data-theme="light"] .glass::before { background: linear-gradient(140deg, rgba(255,255,255,.95), rgba(255,255,255,.4) 30%, rgba(255,255,255,.1) 60%, rgba(255,255,255,.7)); }
+html[data-theme="light"] .glass::before { background: linear-gradient(140deg, #fff, rgba(255,255,255,.55) 30%, rgba(255,255,255,.15) 60%, rgba(255,255,255,.85)); }
 html[data-theme="light"] .glass::after { background: radial-gradient(420px circle at var(--mx, 50%) var(--my, -40%), rgba(255,255,255,.55), transparent 45%); }
-html[data-theme="dark"] .glass {
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.09), inset 0 0 0 1px rgba(255,255,255,.04),
-    0 1px 2px rgba(0,0,0,.3), 0 14px 36px -14px rgba(0,0,0,.55);
-}
-html[data-theme="dark"] .glass::before { background: linear-gradient(140deg, rgba(255,255,255,.16), rgba(255,255,255,.03) 30%, rgba(255,255,255,.01) 60%, rgba(255,255,255,.08)); }
-/* backdrop: pastel glows multiply into the light page instead of screening into white */
-html[data-theme="light"] .blob { mix-blend-mode: multiply; opacity: .5; }
+/* backdrop: pastel glows sit softly on the light page instead of screening into white */
+html[data-theme="light"] .blob { mix-blend-mode: normal; opacity: .7; filter: blur(80px); }
 html[data-theme="light"] .grain { opacity: .035; }
-html[data-theme="dark"] .blob { opacity: .4; }
+html[data-theme="light"] .side-item.active { background: #fff; box-shadow: 0 6px 16px -8px rgba(30,41,80,.25), inset 0 0 0 1px rgba(15,23,42,.05); color: var(--ink); }
+html[data-theme="light"] .side-item.active .side-ico { background: var(--accent); color: #fff; }
 /* solid-ish surfaces that float over everything */
 html[data-theme="light"] .tooltip, html[data-theme="light"] .toast,
 html[data-theme="dark"] .tooltip, html[data-theme="dark"] .toast { background: var(--surface-solid); }
 /* popovers and the menu stay frosted glass in every theme */
-html[data-theme="light"] .pop { background: rgba(255,255,255,.66); }
-html[data-theme="dark"] .pop { background: rgba(26,37,49,.6); }
+html[data-theme="light"] .pop { background: rgba(255,255,255,.7); }
+html[data-theme="dark"] .pop { background: rgba(16,15,26,.62); }
 /* the user menu lives inside the glass header, and a backdrop blur inside another backdrop blur
    can't see the page behind it, so the menu needs real opacity to stay readable over cards */
 .dropdown { background: rgba(14,18,30,.92); }
 html[data-theme="light"] .dropdown { background: rgba(255,255,255,.95); }
-html[data-theme="dark"] .dropdown { background: rgba(26,37,49,.95); }
-/* accent: navigation and selection in green, like a classic admin console */
-html[data-theme="light"] .side-item.active, html[data-theme="dark"] .side-item.active { background: var(--accent-soft); box-shadow: none; color: var(--accent-ink); }
-html[data-theme="light"] .side-item.active .side-ico, html[data-theme="dark"] .side-item.active .side-ico { background: var(--accent); color: #fff; }
+html[data-theme="dark"] .dropdown { background: rgba(16,15,26,.95); }
 html[data-theme="light"] .side-ico { box-shadow: inset 0 0 0 1px rgba(15,23,42,.06); }
 html[data-theme="light"] .switch input:checked + i, html[data-theme="light"] .row-toggle input:checked + i,
 html[data-theme="dark"] .switch input:checked + i, html[data-theme="dark"] .row-toggle input:checked + i { background: var(--accent); }
@@ -711,27 +724,38 @@ html[data-theme="light"] .dr-arrays em { color: #1d5fa8; }
 html[data-theme="light"] .sb .wxi, html[data-theme="light"] .pop .wxi { color: #3a4656; }
 html[data-theme="light"] .side-dot { border-color: #fff; }
 /* the constellation stays on every theme; on pale backgrounds it is drawn in ink, not light */
-html[data-theme="light"] #sky { mix-blend-mode: multiply; }
+html[data-theme="light"] #sky { mix-blend-mode: multiply; opacity: .55; }
 /* Auto: the chosen sky theme's accent marks navigation, selection and toggles (sky.js sets --accent) */
 html[data-auto] .side-item.active { background: var(--accent-soft); color: var(--ink); }
 html[data-auto] .side-item.active .side-ico { background: var(--accent); color: #fff; }
 html[data-auto][data-theme="sky"] .side-item.active .side-ico { color: #06101a; }
+html[data-auto][data-theme="light"] .side-item.active { background: #fff; }
 html[data-auto] .switch input:checked + i, html[data-auto] .row-toggle input:checked + i { background: var(--accent); }
 html[data-auto] .st-steps i.on, html[data-auto] .st-steps i.now { background: var(--accent); }
+/* every theme: headline numbers, labels and a little lift on hover */
+.ring-val b { font-size: 34px; font-weight: 600; letter-spacing: -.045em; }
+.ring-val small { letter-spacing: .02em; }
+h2 { font-weight: 600; letter-spacing: -.005em; font-size: 15.5px; }
+.label, .side-sep, .sub-head > span:first-child { letter-spacing: .09em; }
+.ring circle { stroke-width: 8; }
+.side-item { border-radius: 14px; }
+.card.glass, .tile.glass { transition: transform .35s cubic-bezier(.2,.8,.2,1), box-shadow .35s; }
+.card.glass:hover, .tile.glass:hover { transform: translateY(-2px); }
+@media (prefers-reduced-motion: reduce) { .card.glass:hover, .tile.glass:hover { transform: none; } }
 /* themes where live blur is off (no backdrop-filter support, or native 8K) need their own pre-blended fills */
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   .pop, .dropdown { background: rgba(20,22,34,.97); }
   html[data-theme="light"] .pop, html[data-theme="light"] .dropdown { background: rgba(255,255,255,.98); }
-  html[data-theme="dark"] .pop, html[data-theme="dark"] .dropdown { background: rgba(29,40,52,.98); }
+  html[data-theme="dark"] .pop, html[data-theme="dark"] .dropdown { background: rgba(16,15,26,.98); }
   html[data-theme="light"] .glass { background: linear-gradient(135deg, rgba(255,255,255,.97), rgba(248,250,252,.96)); }
-  html[data-theme="dark"] .glass { background: linear-gradient(135deg, rgba(37,51,65,.97), rgba(29,40,52,.97)); }
+  html[data-theme="dark"] .glass { background: linear-gradient(160deg, rgba(26,25,36,.97), rgba(14,13,22,.97)); }
 }
 @media (min-width: 6000px), (min-width: 3200px) and (min-resolution: 1.75dppx) {
   .pop, .dropdown { background: rgba(20,22,34,.96); }
   html[data-theme="light"] .pop, html[data-theme="light"] .dropdown { background: rgba(255,255,255,.97); }
-  html[data-theme="dark"] .pop, html[data-theme="dark"] .dropdown { background: rgba(29,40,52,.97); }
+  html[data-theme="dark"] .pop, html[data-theme="dark"] .dropdown { background: rgba(16,15,26,.97); }
   html[data-theme="light"] .glass { background: linear-gradient(135deg, rgba(255,255,255,.94) 0%, rgba(250,252,254,.9) 45%, rgba(255,255,255,.92) 100%); }
-  html[data-theme="dark"] .glass { background: linear-gradient(135deg, rgba(43,58,73,.92) 0%, rgba(31,43,56,.92) 45%, rgba(38,52,66,.92) 100%); }
+  html[data-theme="dark"] .glass { background: linear-gradient(160deg, rgba(30,28,42,.92) 0%, rgba(16,15,24,.92) 45%, rgba(22,21,32,.92) 100%); }
 }
 
 /* swizzin mark on a small drop of liquid glass, tinted by the sky (or the theme's glows) */
@@ -921,7 +945,7 @@ html[data-theme="light"] .cmdk-back { background: rgba(30, 40, 60, .18); }
 .cmdk { width: min(620px, 100%); max-height: 66vh; display: flex; flex-direction: column; border-radius: 18px; overflow: hidden;
   background: rgba(14, 18, 30, .94); }
 html[data-theme="light"] .cmdk { background: rgba(255, 255, 255, .97); }
-html[data-theme="dark"] .cmdk { background: rgba(26, 37, 49, .97); }
+html[data-theme="dark"] .cmdk { background: rgba(16, 15, 26, .97); }
 .cmdk-in { display: flex; align-items: center; gap: 10px; padding: 14px 16px; border-bottom: 1px solid var(--line); color: var(--ink-3); }
 .cmdk-in input { flex: 1; min-width: 0; font: inherit; font-size: 15.5px; color: var(--ink); background: none; border: 0; outline: none; }
 .cmdk-in input::placeholder { color: var(--ink-3); }
