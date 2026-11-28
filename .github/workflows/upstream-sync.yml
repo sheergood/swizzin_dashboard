@@ -3,13 +3,19 @@ name: upstream-sync
 # own CI has passed on the merged result. It only ever pushes to this fork (sheergood); it never
 # opens pull requests or pushes anything to the original author.
 #
-#   1. merge   — merge upstream into the scratch branch `upstream-sync` (real branches untouched)
+#   1. merge   — merge upstream commits that are old enough (QUARANTINE_DAYS) into the scratch
+#                branch `upstream-sync` (real branches untouched)
 #   2. test    — run this fork's full CI on that branch
-#   3. promote — fast-forward master and custom to it, only if CI passed
-#   4. report  — on a conflict or failure, open (or update) an issue; on success, close it
+#   3. promote — only if CI passed AND the change doesn't need your approval: tag the current
+#                master as pre-sync-* (instant rollback point), fast-forward master and custom,
+#                tag the result sync-*
+#   4. report  — an issue when something needs you (approval, conflict, failed CI); closed again
+#                once a later run gets the update onto master
+# The rules are in .github/upstream-sync.conf; see FORK.md, "Upstream updates".
 #
-# Run it by hand from the Actions tab ("Run workflow"); tick "test only" to rehearse without
-# changing any branch.
+# Run it by hand from the Actions tab ("Run workflow"): tick "test only" to rehearse without
+# changing any branch, or put an upstream commit in "approve" to accept an update that waits for
+# your approval (it still has to pass CI).
 on:
   schedule:
     - cron: "41 3 * * 1"   # Mondays 03:41 UTC = 09:11 IST
@@ -19,6 +25,10 @@ on:
         description: "Rehearse: merge + full CI even if nothing is new, but don't change master/custom"
         type: boolean
         default: false
+      approve:
+        description: "Approve an update: the upstream commit from the issue (it still has to pass CI)"
+        type: string
+        default: ""
 
 permissions:
   contents: write   # push the scratch branch and fast-forward master/custom
@@ -47,6 +57,10 @@ jobs:
       count: ${{ steps.m.outputs.count }}
       commits: ${{ steps.m.outputs.commits }}
       files: ${{ steps.m.outputs.files }}
+      upstream: ${{ steps.m.outputs.upstream }}
+      waiting: ${{ steps.m.outputs.waiting }}
+      waiting_until: ${{ steps.m.outputs.waiting_until }}
+      reasons: ${{ steps.m.outputs.reasons }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -56,11 +70,12 @@ jobs:
         name: merge upstream into the scratch branch
         env:
           FORCE_TEST: ${{ inputs.test_only == true }}
+          APPROVE_SHA: ${{ inputs.approve }}
         run: bash .github/scripts/upstream-merge.sh
 
   test:
     needs: merge
-    if: needs.merge.outputs.status == 'merged'
+    if: needs.merge.outputs.status == 'merged' || needs.merge.outputs.status == 'review'
     uses: ./.github/workflows/ci.yml
     with:
       ref: upstream-sync
@@ -73,18 +88,24 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: fast-forward master and custom (never forced)
+      - name: fast-forward master and custom (never forced), with rollback tags
         env:
           SHA: ${{ needs.merge.outputs.sha }}
+          BASE_SHA: ${{ needs.merge.outputs.base_sha }}
+          UP: ${{ needs.merge.outputs.upstream }}
         run: |
           set -e
           git fetch --quiet origin "$TEST_BRANCH"
+          stamp="$(date -u +%Y%m%d)-${UP:0:7}"
+          # the version servers ran before this update: `SWIZ_GIT_REF=tags/pre-sync-... box update`
+          git push origin "$BASE_SHA:refs/tags/pre-sync-$stamp" || echo "::warning::tag pre-sync-$stamp exists"
           for b in $TARGETS; do
             # a plain push only succeeds as a fast-forward; if a branch moved since the merge it is
             # refused and reported, never overwritten
             git push origin "$SHA:refs/heads/$b"
             echo "::notice::$b -> ${SHA:0:7}"
           done
+          git push origin "$SHA:refs/tags/sync-$stamp" || echo "::warning::tag sync-$stamp exists"
 
   report:
     needs: [merge, test, promote]
@@ -103,6 +124,11 @@ jobs:
       COUNT: ${{ needs.merge.outputs.count }}
       COMMITS: ${{ needs.merge.outputs.commits }}
       FILES: ${{ needs.merge.outputs.files }}
+      UP: ${{ needs.merge.outputs.upstream }}
+      WAITING: ${{ needs.merge.outputs.waiting }}
+      WAITING_UNTIL: ${{ needs.merge.outputs.waiting_until }}
+      REASONS: ${{ needs.merge.outputs.reasons }}
+      APPROVE: ${{ inputs.approve }}
     steps:
       - name: report
         run: |
@@ -116,12 +142,48 @@ jobs:
           if [ "$MERGE_RESULT" = success ] && [ "$STATUS" = up-to-date ]; then
             summary "✅ Already up to date with \`$up\` — nothing to do."; exit 0
           fi
-          if [ "$TEST_ONLY" = true ] && [ "$STATUS" = merged ]; then
+          if [ "$MERGE_RESULT" = success ] && [ "$STATUS" = quarantined ]; then
+            summary "⏳ ${WAITING} new commit(s) from \`$up\` are younger than the quarantine; they're taken from ${WAITING_UNTIL:-a later run} on, if nothing replaces them first."
+            exit 0
+          fi
+          if [ "$STATUS" = bad-approve ]; then
+            summary "### ⚠️ Can't approve \`$APPROVE\`" "" "It isn't a commit on \`$up\`. Copy the upstream commit from the issue and run the workflow again. Nothing was changed."
+            exit 1
+          fi
+          if [ "$STATUS" = review ] && [ "$TEST_ONLY" != true ]; then
+            title="Upstream update waits for your approval"
+            [ "$TEST" = success ] && ci="✅ This fork's full CI **passed** on the merged result." || ci="❌ This fork's full CI **failed** on the merged result ([log]($RUN_URL)); approving won't help until that's fixed."
+            body=$(printf '%s\n' \
+              "${COUNT} new commit(s) from \`$up\`, up to upstream commit \`$UP\`, merged cleanly into \`$TEST_BRANCH\`. They wait for you because this update:" "" \
+              "$REASONS" "" "$ci" "" \
+              "**Nothing was changed:** \`master\` and \`custom\` are untouched, so servers keep the current version." "" \
+              "<details><summary>Commits</summary>" "" "${COMMITS:-}" "" "</details>" "" \
+              "**Review:** ${GITHUB_SERVER_URL}/${GH_REPO}/compare/${BASE}...${TEST_BRANCH}" "" \
+              "**Approve** (it is merged and tested again, then promoted; the rollback tag \`pre-sync-…\` is created first):" \
+              '```bash' "gh workflow run upstream-sync.yml -R $GH_REPO -f approve=$UP" '```' \
+              "or Actions → upstream-sync → Run workflow → approve: \`$UP\`" "" \
+              "To skip it, do nothing: it stays waiting, and this issue is updated when upstream adds more." "" \
+              "[Run log]($RUN_URL)")
+            summary "### ⏸ $title" "" "$body"
+            if [ "$(gh api "repos/$GH_REPO" -q .has_issues)" = true ]; then
+              gh label create upstream-sync --color FBCA04 --description "Weekly upstream sync" --force >/dev/null
+              open=$(gh issue list --label upstream-sync --state open --json number -q '.[0].number')
+              if [ -n "$open" ]; then
+                # once a week is enough to hear about the same waiting update: only when it changed
+                seen=$(gh issue view "$open" --json body,comments -q '[.body, (.comments[].body)] | join(" ")')
+                case "$seen" in *"$UP"*) echo "already reported $UP in #$open" ;;
+                  *) gh issue comment "$open" --body "**$(date -u +%F): $title**"$'\n\n'"$body" ;; esac
+              else gh issue create --title "$title" --label upstream-sync --body "$body"; fi
+            fi
+            exit 0
+          fi
+          if [ "$TEST_ONLY" = true ] && { [ "$STATUS" = merged ] || [ "$STATUS" = review ]; }; then
             summary "### Rehearsal (test only)" "" "Merged upstream into \`$TEST_BRANCH\` (${COUNT} new commits) and ran the full CI: **$TEST**." "No branch was changed."
             [ "$TEST" = success ]; exit $?
           fi
           if [ "$STATUS" = merged ] && [ "$TEST" = success ] && [ "$PROMOTE" = success ]; then
-            summary "✅ Merged ${COUNT} new commits from \`$up\`; CI passed; \`master\` and \`custom\` are now at \`${SHA:0:7}\`." "" "$COMMITS"
+            summary "✅ Merged ${COUNT} new commits from \`$up\`; CI passed; \`master\` and \`custom\` are now at \`${SHA:0:7}\`." "" \
+              "Rollback for servers: \`sudo -u swizzin git -C /opt/swizzin reset --hard pre-sync-$(date -u +%Y%m%d)-${UP:0:7} && sudo systemctl restart panel\`" "" "${REASONS:-}" "" "$COMMITS"
             for n in $(gh issue list --label upstream-sync --state open --json number -q '.[].number'); do
               gh issue close "$n" --comment "Resolved: the update was merged, passed CI and is now on \`master\` and \`custom\` (\`${SHA:0:7}\`). [Run]($RUN_URL)"
             done

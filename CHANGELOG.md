@@ -3,6 +3,19 @@
 Fork of [liaralabs/swizzin_dashboard](https://github.com/liaralabs/swizzin_dashboard), tuned for
 seedbox servers. Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [sheergood-25] — Nov 28 2026
+
+### Changed
+- **The upstream sync follows the same protocol as the swizzin fork** (see its FORK.md,
+  "Upstream updates"; settings in `.github/upstream-sync.conf`):
+  - a 7-day quarantine;
+  - full CI on the merged result;
+  - rollback tags `pre-sync-*` and `sync-*` on each promotion.
+- Because the panel here is largely rewritten, **every upstream change waits for your approval**
+  (`REVIEW_ALL=true`). To roll a server back:
+  `sudo -u swizzin git -C /opt/swizzin reset --hard pre-sync-… && sudo systemctl restart panel`.
+- CI tests the sync rules.
+
 ## [sheergood-24] — Nov 28 2026
 
 ### Fixed

@@ -33,3 +33,5 @@ jobs:
         run: python -m unittest tests.test_core -v
       - name: smoke test every page and API
         run: sudo mkdir -p /install && python tests/smoke.py
+      - name: upstream sync rules (quarantine, approval triggers, conflicts, approvals)
+        run: bash .github/scripts/test-upstream-merge.sh
